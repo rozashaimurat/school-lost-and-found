@@ -10,13 +10,96 @@ from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
 # ---------------------------------------------------------
-# 1. CONFIGURATION & DIRECTORY SETUP
+# 1. PAGE CONFIGURATION & CUSTOM CSS STYLING
 # ---------------------------------------------------------
 st.set_page_config(
     page_title="School Lost & Found Hub",
     page_icon="🎒",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="collapsed"
 )
+
+# Custom CSS Injection for Modern UI
+st.markdown("""
+    <style>
+    /* Global Page Styling */
+    .main {
+        background-color: #F8FAFC;
+    }
+    
+    /* Hero Header Banner */
+    .hero-banner {
+        background: linear-gradient(135deg, #4F46E5 0%, #3B82F6 100%);
+        padding: 2.5rem 2rem;
+        border-radius: 16px;
+        color: white;
+        text-align: center;
+        margin-bottom: 2rem;
+        box-shadow: 0 10px 25px -5px rgba(79, 70, 229, 0.25);
+    }
+    .hero-banner h1 {
+        color: #FFFFFF !important;
+        font-size: 2.3rem !important;
+        font-weight: 800 !important;
+        margin-bottom: 0.4rem !important;
+    }
+    .hero-banner p {
+        color: #E0E7FF !important;
+        font-size: 1.1rem !important;
+        margin: 0 !important;
+    }
+
+    /* Tab Button Styling */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 10px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 10px !important;
+        padding: 10px 20px !important;
+        background-color: #FFFFFF !important;
+        border: 1px solid #E2E8F0 !important;
+        font-weight: 600 !important;
+        transition: all 0.2s ease !important;
+    }
+    .stTabs [aria-selected="true"] {
+        background: linear-gradient(135deg, #4F46E5 0%, #3B82F6 100%) !important;
+        color: white !important;
+        border: none !important;
+        box-shadow: 0 4px 12px rgba(79, 70, 229, 0.2) !important;
+    }
+
+    /* Card Container Styling */
+    div[data-testid="stVerticalBlock"] > div[data-testid="stBlock"] {
+        border-radius: 12px;
+    }
+
+    /* Custom Badges */
+    .badge-active {
+        background-color: #FEF3C7;
+        color: #92400E;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 0.82rem;
+        font-weight: 700;
+        display: inline-block;
+    }
+    .badge-returned {
+        background-color: #D1FAE5;
+        color: #065F46;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 0.82rem;
+        font-weight: 700;
+        display: inline-block;
+    }
+    
+    /* Subtle Divider Styling */
+    hr {
+        border-color: #E2E8F0 !important;
+        margin: 1.5rem 0 !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 DB_FILE = "lost_and_found.db"
 UPLOAD_DIR = "uploads"
@@ -94,83 +177,107 @@ def cosine_similarity(vec1, vec2):
     return float(dot_product / (norm_v1 * norm_v2))
 
 # ---------------------------------------------------------
-# 4. USER INTERFACE & NAVIGATION
+# 4. HERO HEADER & NAVIGATION
 # ---------------------------------------------------------
-st.title("🎒 School Lost & Found Hub")
+st.markdown("""
+    <div class="hero-banner">
+        <h1>🎒 School Lost & Found Hub</h1>
+        <p>AI-powered visual search and smart inventory tracking for campus items</p>
+    </div>
+""", unsafe_allow_html=True)
 
 tab1, tab2, tab3 = st.tabs([
     "🔍 Search Lost Items", 
-    "📷 Report/Register Item", 
-    "🔐 Staff Inventory Management"
+    "📷 Report / Register Item", 
+    "🔐 Staff Console"
 ])
 
 # =========================================================
 # TAB 1: SEARCH LOST ITEMS
 # =========================================================
 with tab1:
-    st.header("Find Your Missing Item")
+    st.markdown("### 🔎 Find Your Missing Item")
+    st.caption("Choose how you want to locate your lost property below.")
     
     search_mode = st.radio(
-        "How would you like to search?",
+        "Search Mode",
         ["📷 Upload a Photo (AI Visual Search)", "✏️ Type Description & Filter"],
-        horizontal=True
+        horizontal=True,
+        label_visibility="collapsed"
     )
+
+    st.markdown("---")
 
     # --- MODE 1: VISUAL AI SEARCH ---
     if search_mode == "📷 Upload a Photo (AI Visual Search)":
-        uploaded_query = st.file_uploader("Upload a photo of your lost item (or similar image)", type=["jpg", "jpeg", "png"])
-        
-        if uploaded_query is not None:
-            st.image(uploaded_query, caption="Query Image", width=250)
+        with st.container(border=True):
+            st.markdown("##### 📸 AI Camera Match")
+            uploaded_query = st.file_uploader(
+                "Upload a photo of your lost item (or a similar picture from the web)", 
+                type=["jpg", "jpeg", "png"]
+            )
             
-            with st.spinner("Extracting AI features & matching against inventory..."):
-                query_vec = extract_mediapipe_vector(uploaded_query)
-            
-            if query_vec is not None:
-                conn = sqlite3.connect(DB_FILE)
-                c = conn.cursor()
-                c.execute("SELECT id, item_type, location_found, date_found, notes, image_path, vector_path FROM items WHERE is_returned = 0")
-                active_items = c.fetchall()
-                conn.close()
+            if uploaded_query is not None:
+                st.image(uploaded_query, caption="Your Uploaded Photo", width=220)
+                
+                with st.spinner("Extracting AI features & calculating vector similarity..."):
+                    query_vec = extract_mediapipe_vector(uploaded_query)
+                
+                if query_vec is not None:
+                    conn = sqlite3.connect(DB_FILE)
+                    c = conn.cursor()
+                    c.execute("SELECT id, item_type, location_found, date_found, notes, image_path, vector_path FROM items WHERE is_returned = 0")
+                    active_items = c.fetchall()
+                    conn.close()
 
-                matches = []
-                for item in active_items:
-                    item_id, item_type, loc, date_found, notes, img_path, vec_path = item
-                    if vec_path and os.path.exists(vec_path):
-                        saved_vec = np.load(vec_path)
-                        sim_score = cosine_similarity(query_vec, saved_vec)
-                        matches.append((sim_score, item))
-
-                # Sort by similarity score descending
-                matches.sort(key=lambda x: x[0], reverse=True)
-
-                st.subheader("Top Visual Matches")
-                if not matches:
-                    st.info("No active inventory items available to match.")
-                else:
-                    cols = st.columns(3)
-                    for idx, (score, item) in enumerate(matches[:6]):
+                    matches = []
+                    for item in active_items:
                         item_id, item_type, loc, date_found, notes, img_path, vec_path = item
-                        with cols[idx % 3]:
-                            if os.path.exists(img_path):
-                                st.image(img_path, use_container_width=True)
-                            st.markdown(f"### {item_type}")
-                            st.progress(float(max(0.0, min(1.0, score))))
-                            st.caption(f"Match Confidence: {score*100:.1f}%")
-                            st.markdown(f"**Location:** {loc}")
-                            st.markdown(f"**Date Found:** {date_found}")
-                            if notes:
-                                st.markdown(f"**Details:** {notes}")
-                            st.caption(f"Ref ID: #{item_id}")
-                            st.divider()
+                        if vec_path and os.path.exists(vec_path):
+                            saved_vec = np.load(vec_path)
+                            sim_score = cosine_similarity(query_vec, saved_vec)
+                            matches.append((sim_score, item))
+
+                    matches.sort(key=lambda x: x[0], reverse=True)
+
+                    st.markdown("#### 🎯 Best Visual Matches")
+                    if not matches:
+                        st.info("No active items in the inventory to compare against.")
+                    else:
+                        cols = st.columns(3)
+                        for idx, (score, item) in enumerate(matches[:6]):
+                            item_id, item_type, loc, date_found, notes, img_path, vec_path = item
+                            with cols[idx % 3]:
+                                with st.container(border=True):
+                                    if os.path.exists(img_path):
+                                        st.image(img_path, use_container_width=True)
+                                    
+                                    st.markdown(f"#### {item_type}")
+                                    conf_pct = max(0.0, min(1.0, score))
+                                    st.progress(float(conf_pct))
+                                    st.caption(f"**Match Score:** {score*100:.1f}%")
+                                    
+                                    st.markdown(f"📍 **Found at:** {loc}")
+                                    st.markdown(f"📅 **Date:** {date_found}")
+                                    if notes:
+                                        st.markdown(f"📝 **Notes:** {notes}")
+                                    st.caption(f"Ref ID: #{item_id}")
 
     # --- MODE 2: TEXT & FILTER SEARCH ---
     else:
-        col1, col2 = st.columns(2)
-        with col1:
-            category_filter = st.selectbox("Filter by Category", ["All Categories", "Water Bottle", "Jacket", "Lunch Box", "Backpack", "Other"])
-        with col2:
-            search_text = st.text_input("Search Description Keywords", placeholder="e.g., black, hydroflask, room 211")
+        with st.container(border=True):
+            st.markdown("##### 🔍 Keyword & Category Search")
+            col1, col2 = st.columns(2)
+            with col1:
+                category_filter = st.selectbox(
+                    "Category Filter", 
+                    ["All Categories", "Water Bottle", "Jacket", "Lunch Box", "Backpack", "Other"]
+                )
+            with col2:
+                search_text = st.text_input(
+                    "Keyword Search", 
+                    placeholder="e.g., navy blue, hydroflask, gym, room 104"
+                )
 
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
@@ -178,103 +285,103 @@ with tab1:
         all_active_items = c.fetchall()
         conn.close()
 
-        # Word-by-word keyword matching across all description fields
         keywords = search_text.lower().strip().split()
         filtered_results = []
 
         for item in all_active_items:
             item_id, item_type, loc, date_found, notes, img_path = item
             
-            # Check Category filter
             if category_filter != "All Categories" and item_type != category_filter:
                 continue
 
-            # Combine category, location, and notes into one searchable text string
             combined_text = f"{item_type} {loc} {notes or ''}".lower()
 
-            # Ensure all typed keywords exist in the item record
             if all(kw in combined_text for kw in keywords):
                 filtered_results.append(item)
 
-        st.subheader(f"Matching Items ({len(filtered_results)} found)")
+        st.markdown(f"#### 📦 Available Items ({len(filtered_results)} found)")
         
         if not filtered_results:
-            st.info("No active items match your description or filters.")
+            st.info("No active inventory items match your criteria.")
         else:
             cols = st.columns(3)
             for idx, item in enumerate(filtered_results):
                 item_id, item_type, loc, date_found, notes, img_path = item
                 with cols[idx % 3]:
-                    if os.path.exists(img_path):
-                        st.image(img_path, use_container_width=True)
-                    st.markdown(f"### {item_type}")
-                    st.markdown(f"**Location:** {loc}")
-                    st.markdown(f"**Date Found:** {date_found}")
-                    if notes:
-                        st.markdown(f"**Details:** {notes}")
-                    st.caption(f"Ref ID: #{item_id}")
-                    st.divider()
+                    with st.container(border=True):
+                        if os.path.exists(img_path):
+                            st.image(img_path, use_container_width=True)
+                        st.markdown(f"#### {item_type}")
+                        st.markdown(f"📍 **Location:** {loc}")
+                        st.markdown(f"📅 **Date:** {date_found}")
+                        if notes:
+                            st.markdown(f"📝 **Details:** {notes}")
+                        st.caption(f"Ref ID: #{item_id}")
 
 # =========================================================
 # TAB 2: REPORT / REGISTER ITEM
 # =========================================================
 with tab2:
-    st.header("Register Found Item")
-    st.write("Found something on campus? Register it here so the owner can claim it!")
+    st.markdown("### 📥 Register a Found Item")
+    st.caption("Found an item on campus? Fill out the details below to log it into the lost and found system.")
 
-    with st.form("register_form", clear_on_submit=True):
-        col_a, col_b = st.columns(2)
-        with col_a:
-            item_type = st.selectbox("Category", ["Water Bottle", "Jacket", "Lunch Box", "Backpack", "Other"])
-            location_found = st.text_input("Location Found", placeholder="e.g., Gymnasium bleachers, Room 104")
-        with col_b:
-            date_found = st.date_input("Date Found").strftime("%Y-%m-%d")
-            notes = st.text_area("Additional Details / Description", placeholder="e.g., Navy blue Hydroflask with a sticker")
+    with st.container(border=True):
+        with st.form("register_form", clear_on_submit=True):
+            col_a, col_b = st.columns(2)
+            with col_a:
+                item_type = st.selectbox("Item Category", ["Water Bottle", "Jacket", "Lunch Box", "Backpack", "Other"])
+                location_found = st.text_input("Location Found", placeholder="e.g., Gymnasium bleachers, Library, Room 204")
+            with col_b:
+                date_found = st.date_input("Date Found").strftime("%Y-%m-%d")
+                notes = st.text_area("Description & Unique Identifiers", placeholder="e.g., Blue stainless steel bottle with stickers")
 
-        item_image = st.file_uploader("Upload Photo of Found Item", type=["jpg", "jpeg", "png"])
-        submitted = st.form_submit_button("Submit Found Item")
+            item_image = st.file_uploader("Item Photo (Used for AI feature matching)", type=["jpg", "jpeg", "png"])
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            submitted = st.form_submit_button("🚀 Submit Item to Inventory", use_container_width=True)
 
-        if submitted:
-            if not item_image:
-                st.error("Please upload a photo of the item.")
-            elif not location_found.strip():
-                st.error("Please specify where the item was found.")
-            else:
-                # 1. Save Image to disk
-                file_ext = os.path.splitext(item_image.name)[1]
-                conn = sqlite3.connect(DB_FILE)
-                c = conn.cursor()
-                c.execute("INSERT INTO items (item_type, location_found, date_found, notes, image_path) VALUES (?, ?, ?, ?, ?)",
-                          (item_type, location_found, date_found, notes, ""))
-                new_id = c.lastrowid
-                
-                img_path = os.path.join(UPLOAD_DIR, f"item_{new_id}{file_ext}")
-                with open(img_path, "wb") as f:
-                    f.write(item_image.getbuffer())
-
-                # 2. Extract & Save Vector
-                vec_path = os.path.join(VECTOR_DIR, f"vector_{new_id}.npy")
-                vector = extract_mediapipe_vector(item_image)
-                
-                if vector is not None:
-                    np.save(vec_path, vector)
+            if submitted:
+                if not item_image:
+                    st.error("Please upload a photo of the item.")
+                elif not location_found.strip():
+                    st.error("Please specify where the item was found.")
                 else:
-                    vec_path = None
+                    file_ext = os.path.splitext(item_image.name)[1]
+                    conn = sqlite3.connect(DB_FILE)
+                    c = conn.cursor()
+                    c.execute(
+                        "INSERT INTO items (item_type, location_found, date_found, notes, image_path) VALUES (?, ?, ?, ?, ?)",
+                        (item_type, location_found, date_found, notes, "")
+                    )
+                    new_id = c.lastrowid
+                    
+                    img_path = os.path.join(UPLOAD_DIR, f"item_{new_id}{file_ext}")
+                    with open(img_path, "wb") as f:
+                        f.write(item_image.getbuffer())
 
-                # 3. Update Database with file paths
-                c.execute("UPDATE items SET image_path = ?, vector_path = ? WHERE id = ?", (img_path, vec_path, new_id))
-                conn.commit()
-                conn.close()
+                    vec_path = os.path.join(VECTOR_DIR, f"vector_{new_id}.npy")
+                    vector = extract_mediapipe_vector(item_image)
+                    
+                    if vector is not None:
+                        np.save(vec_path, vector)
+                    else:
+                        vec_path = None
 
-                st.success(f"Item successfully registered! (Ref ID: #{new_id})")
+                    c.execute("UPDATE items SET image_path = ?, vector_path = ? WHERE id = ?", (img_path, vec_path, new_id))
+                    conn.commit()
+                    conn.close()
+
+                    st.balloons()
+                    st.success(f"Item successfully registered! Reference ID: #{new_id}")
 
 # =========================================================
 # TAB 3: STAFF INVENTORY MANAGEMENT
 # =========================================================
 with tab3:
-    st.header("Staff Console")
+    st.markdown("### 🔐 Staff Management Console")
+    st.caption("Authorized staff members can update item statuses and confirm returns.")
     
-    passcode = st.text_input("Enter Passcode to Access Staff Controls", type="password")
+    passcode = st.text_input("Enter Staff Passcode", type="password")
     
     if passcode == "1234":
         st.success("Authenticated as Staff")
@@ -285,37 +392,54 @@ with tab3:
         all_records = c.fetchall()
         conn.close()
 
+        # Operational Summary Metrics
+        total_items = len(all_records)
+        active_cnt = sum(1 for r in all_records if r[5] == 0)
+        returned_cnt = sum(1 for r in all_records if r[5] == 1)
+
+        m_col1, m_col2, m_col3 = st.columns(3)
+        m_col1.metric("Total Items Logged", total_items)
+        m_col2.metric("Active Unclaimed", active_cnt)
+        m_col3.metric("Returned to Owner", returned_cnt)
+
+        st.markdown("---")
+
         if not all_records:
-            st.info("No records in database.")
+            st.info("No records present in the database.")
         else:
             for record in all_records:
                 rec_id, rec_type, rec_loc, rec_date, rec_notes, rec_returned, rec_img = record
                 
-                col_img, col_info, col_action = st.columns([1, 2, 1])
-                
-                with col_img:
-                    if os.path.exists(rec_img):
-                        st.image(rec_img, width=120)
-                
-                with col_info:
-                    status_badge = "✅ Returned" if rec_returned == 1 else "🟡 Active"
-                    st.markdown(f"**#{rec_id} - {rec_type}** ({status_badge})")
-                    st.write(f"📍 **Found at:** {rec_loc} on {rec_date}")
-                    if rec_notes:
-                        st.caption(f"Notes: {rec_notes}")
-                
-                with col_action:
-                    if rec_returned == 0:
-                        if st.button("Mark Returned", key=f"ret_{rec_id}"):
-                            conn = sqlite3.connect(DB_FILE)
-                            c = conn.cursor()
-                            c.execute("UPDATE items SET is_returned = 1 WHERE id = ?", (rec_id,))
-                            conn.commit()
-                            conn.close()
-                            st.rerun()
-                    else:
-                        st.write("Item Returned")
-
-                st.divider()
+                with st.container(border=True):
+                    col_img, col_info, col_action = st.columns([1.2, 2.8, 1.5])
+                    
+                    with col_img:
+                        if os.path.exists(rec_img):
+                            st.image(rec_img, use_container_width=True)
+                    
+                    with col_info:
+                        if rec_returned == 1:
+                            badge_html = '<span class="badge-returned">✅ Returned</span>'
+                        else:
+                            badge_html = '<span class="badge-active">🟡 Active Unclaimed</span>'
+                        
+                        st.markdown(f"#### Item #{rec_id}: {rec_type} {badge_html}", unsafe_allow_html=True)
+                        st.markdown(f"📍 **Location:** {rec_loc}")
+                        st.markdown(f"📅 **Date Found:** {rec_date}")
+                        if rec_notes:
+                            st.caption(f"Notes: {rec_notes}")
+                    
+                    with col_action:
+                        if rec_returned == 0:
+                            if st.button("Mark as Returned", key=f"ret_{rec_id}", use_container_width=True):
+                                conn = sqlite3.connect(DB_FILE)
+                                c = conn.cursor()
+                                c.execute("UPDATE items SET is_returned = 1 WHERE id = ?", (rec_id,))
+                                conn.commit()
+                                conn.close()
+                                st.rerun()
+                        else:
+                            st.markdown("---")
+                            st.caption("Status: Complete")
     elif passcode:
         st.error("Incorrect passcode.")
