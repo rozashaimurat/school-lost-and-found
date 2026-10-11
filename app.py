@@ -62,7 +62,7 @@ init_db()
 @st.cache_resource
 def get_embedder():
     base_options = python.BaseOptions(model_asset_path=MODEL_PATH)
-    options = vision.ImageEmbedder.ImageEmbedderOptions(
+    options = vision.ImageEmbedderOptions(
         base_options=base_options,
         l2_normalize=True,
         quantize=False
