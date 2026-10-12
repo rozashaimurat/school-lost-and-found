@@ -14,7 +14,7 @@ from mediapipe.tasks.python import vision
 # ---------------------------------------------------------
 st.set_page_config(
     page_title="School Lost & Found Hub",
-    page_icon="🎒",
+    page_icon="",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
