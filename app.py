@@ -110,7 +110,6 @@ MODEL_URL = "https://storage.googleapis.com/mediapipe-models/image_embedder/mobi
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(VECTOR_DIR, exist_ok=True)
 
-# Automatically download the MediaPipe embedder model if missing
 if not os.path.exists(MODEL_PATH):
     with st.spinner("Downloading vision AI model..."):
         urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
@@ -230,19 +229,24 @@ with tab1:
                     active_items = c.fetchall()
                     conn.close()
 
+                    # Set 35% minimum confidence threshold
+                    SIMILARITY_THRESHOLD = 0.35
+
                     matches = []
                     for item in active_items:
                         item_id, item_type, loc, date_found, notes, img_path, vec_path = item
                         if vec_path and os.path.exists(vec_path):
                             saved_vec = np.load(vec_path)
                             sim_score = cosine_similarity(query_vec, saved_vec)
-                            matches.append((sim_score, item))
+                            
+                            if sim_score >= SIMILARITY_THRESHOLD:
+                                matches.append((sim_score, item))
 
                     matches.sort(key=lambda x: x[0], reverse=True)
 
                     st.markdown("#### 🎯 Best Visual Matches")
                     if not matches:
-                        st.info("No active items in the inventory to compare against.")
+                        st.info("No matching items found with sufficient visual similarity (minimum 35% match required). Try uploading a clearer photo or using Keyword Search.")
                     else:
                         cols = st.columns(3)
                         for idx, (score, item) in enumerate(matches[:6]):
@@ -392,7 +396,6 @@ with tab3:
         all_records = c.fetchall()
         conn.close()
 
-        # Operational Summary Metrics
         total_items = len(all_records)
         active_cnt = sum(1 for r in all_records if r[5] == 0)
         returned_cnt = sum(1 for r in all_records if r[5] == 1)
