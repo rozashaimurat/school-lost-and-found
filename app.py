@@ -1,6 +1,7 @@
 import os
 import sqlite3
 import urllib.request
+import base64
 import numpy as np
 from PIL import Image
 import streamlit as st
@@ -12,13 +13,22 @@ from mediapipe.tasks.python import vision
 # ---------------------------------------------------------
 # 1. PAGE CONFIGURATION & CUSTOM CSS STYLING
 # ---------------------------------------------------------
-# Dynamically detect image file name (1200x630wa.png or logo.png)
+# Automatically detect logo file name
 if os.path.exists("1200x630wa.png"):
     LOGO_PATH = "1200x630wa.png"
 elif os.path.exists("logo.png"):
     LOGO_PATH = "logo.png"
 else:
     LOGO_PATH = None
+
+def get_base64_image(image_path):
+    """Convert local image to base64 string for direct HTML embedding."""
+    if image_path and os.path.exists(image_path):
+        with open(image_path, "rb") as f:
+            return base64.b64encode(f.read()).decode()
+    return None
+
+logo_b64 = get_base64_image(LOGO_PATH)
 
 st.set_page_config(
     page_title="School Lost & Found Hub",
@@ -38,18 +48,21 @@ st.markdown("""
     /* Hero Header Banner */
     .hero-banner {
         background: linear-gradient(135deg, #4F46E5 0%, #3B82F6 100%);
-        padding: 1.5rem 2rem;
+        padding: 1.8rem 2.2rem;
         border-radius: 16px;
         color: white;
-        text-align: left;
         margin-bottom: 1.5rem;
         box-shadow: 0 10px 25px -5px rgba(79, 70, 229, 0.25);
+        display: flex;
+        align-items: center;
+        gap: 22px;
     }
     .hero-banner h1 {
         color: #FFFFFF !important;
-        font-size: 2.2rem !important;
+        font-size: 2.3rem !important;
         font-weight: 800 !important;
-        margin-bottom: 0.3rem !important;
+        margin-bottom: 0.2rem !important;
+        margin-top: 0 !important;
     }
     .hero-banner p {
         color: #E0E7FF !important;
@@ -184,23 +197,22 @@ def cosine_similarity(vec1, vec2):
     return float(dot_product / (norm_v1 * norm_v2))
 
 # ---------------------------------------------------------
-# 4. HERO HEADER WITH LOGO & NAVIGATION
+# 4. HERO HEADER WITH INTEGRATED LOGO & NAVIGATION
 # ---------------------------------------------------------
-col_logo, col_title = st.columns([1, 6])
+if logo_b64:
+    logo_html = f'<img src="data:image/png;base64,{logo_b64}" style="height: 100px; border-radius: 12px; background-color: #FFFFFF; padding: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); flex-shrink: 0;" />'
+else:
+    logo_html = '<span style="font-size: 3.5rem; line-height: 1;">🎒</span>'
 
-with col_logo:
-    if LOGO_PATH and os.path.exists(LOGO_PATH):
-        st.image(LOGO_PATH, width=110)
-    else:
-        st.title("🎒")
-
-with col_title:
-    st.markdown("""
-        <div class="hero-banner">
+st.markdown(f"""
+    <div class="hero-banner">
+        {logo_html}
+        <div>
             <h1>School Lost & Found Hub</h1>
             <p>AI-powered visual search and smart inventory tracking for campus items</p>
         </div>
-    """, unsafe_allow_html=True)
+    </div>
+""", unsafe_allow_html=True)
 
 tab1, tab2, tab3 = st.tabs([
     "🔍 Search Lost Items", 
@@ -246,7 +258,7 @@ with tab1:
                     active_items = c.fetchall()
                     conn.close()
 
-                    # 35% minimum confidence threshold to filter visual noise
+                    # 35% minimum confidence threshold
                     SIMILARITY_THRESHOLD = 0.35
 
                     matches = []
@@ -377,89 +389,3 @@ with tab2:
                     new_id = c.lastrowid
                     
                     img_path = os.path.join(UPLOAD_DIR, f"item_{new_id}{file_ext}")
-                    with open(img_path, "wb") as f:
-                        f.write(item_image.getbuffer())
-
-                    vec_path = os.path.join(VECTOR_DIR, f"vector_{new_id}.npy")
-                    vector = extract_mediapipe_vector(item_image)
-                    
-                    if vector is not None:
-                        np.save(vec_path, vector)
-                    else:
-                        vec_path = None
-
-                    c.execute("UPDATE items SET image_path = ?, vector_path = ? WHERE id = ?", (img_path, vec_path, new_id))
-                    conn.commit()
-                    conn.close()
-
-                    st.balloons()
-                    st.success(f"Item successfully registered! Reference ID: #{new_id}")
-
-# =========================================================
-# TAB 3: STAFF INVENTORY MANAGEMENT
-# =========================================================
-with tab3:
-    st.markdown("### 🔐 Staff Management Console")
-    st.caption("Authorized staff members can update item statuses and confirm returns.")
-    
-    passcode = st.text_input("Enter Staff Passcode", type="password")
-    
-    if passcode == "1234":
-        st.success("Authenticated as Staff")
-        
-        conn = sqlite3.connect(DB_FILE)
-        c = conn.cursor()
-        c.execute("SELECT id, item_type, location_found, date_found, notes, is_returned, image_path FROM items ORDER BY id DESC")
-        all_records = c.fetchall()
-        conn.close()
-
-        total_items = len(all_records)
-        active_cnt = sum(1 for r in all_records if r[5] == 0)
-        returned_cnt = sum(1 for r in all_records if r[5] == 1)
-
-        m_col1, m_col2, m_col3 = st.columns(3)
-        m_col1.metric("Total Items Logged", total_items)
-        m_col2.metric("Active Unclaimed", active_cnt)
-        m_col3.metric("Returned to Owner", returned_cnt)
-
-        st.markdown("---")
-
-        if not all_records:
-            st.info("No records present in the database.")
-        else:
-            for record in all_records:
-                rec_id, rec_type, rec_loc, rec_date, rec_notes, rec_returned, rec_img = record
-                
-                with st.container(border=True):
-                    col_img, col_info, col_action = st.columns([1.2, 2.8, 1.5])
-                    
-                    with col_img:
-                        if os.path.exists(rec_img):
-                            st.image(rec_img, use_container_width=True)
-                    
-                    with col_info:
-                        if rec_returned == 1:
-                            badge_html = '<span class="badge-returned">✅ Returned</span>'
-                        else:
-                            badge_html = '<span class="badge-active">🟡 Active Unclaimed</span>'
-                        
-                        st.markdown(f"#### Item #{rec_id}: {rec_type} {badge_html}", unsafe_allow_html=True)
-                        st.markdown(f"📍 **Location:** {rec_loc}")
-                        st.markdown(f"📅 **Date Found:** {rec_date}")
-                        if rec_notes:
-                            st.caption(f"Notes: {rec_notes}")
-                    
-                    with col_action:
-                        if rec_returned == 0:
-                            if st.button("Mark as Returned", key=f"ret_{rec_id}", use_container_width=True):
-                                conn = sqlite3.connect(DB_FILE)
-                                c = conn.cursor()
-                                c.execute("UPDATE items SET is_returned = 1 WHERE id = ?", (rec_id,))
-                                conn.commit()
-                                conn.close()
-                                st.rerun()
-                        else:
-                            st.markdown("---")
-                            st.caption("Status: Complete")
-    elif passcode:
-        st.error("Incorrect passcode.")
