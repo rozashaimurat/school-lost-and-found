@@ -12,9 +12,17 @@ from mediapipe.tasks.python import vision
 # ---------------------------------------------------------
 # 1. PAGE CONFIGURATION & CUSTOM CSS STYLING
 # ---------------------------------------------------------
+# Dynamically detect image file name (1200x630wa.png or logo.png)
+if os.path.exists("1200x630wa.png"):
+    LOGO_PATH = "1200x630wa.png"
+elif os.path.exists("logo.png"):
+    LOGO_PATH = "logo.png"
+else:
+    LOGO_PATH = None
+
 st.set_page_config(
     page_title="School Lost & Found Hub",
-    page_icon="",
+    page_icon=LOGO_PATH if LOGO_PATH else "🎒",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -30,22 +38,22 @@ st.markdown("""
     /* Hero Header Banner */
     .hero-banner {
         background: linear-gradient(135deg, #4F46E5 0%, #3B82F6 100%);
-        padding: 2.5rem 2rem;
+        padding: 1.5rem 2rem;
         border-radius: 16px;
         color: white;
-        text-align: center;
-        margin-bottom: 2rem;
+        text-align: left;
+        margin-bottom: 1.5rem;
         box-shadow: 0 10px 25px -5px rgba(79, 70, 229, 0.25);
     }
     .hero-banner h1 {
         color: #FFFFFF !important;
-        font-size: 2.3rem !important;
+        font-size: 2.2rem !important;
         font-weight: 800 !important;
-        margin-bottom: 0.4rem !important;
+        margin-bottom: 0.3rem !important;
     }
     .hero-banner p {
         color: #E0E7FF !important;
-        font-size: 1.1rem !important;
+        font-size: 1.05rem !important;
         margin: 0 !important;
     }
 
@@ -73,7 +81,7 @@ st.markdown("""
         border-radius: 12px;
     }
 
-    /* Custom Badges */
+    /* Custom Status Badges */
     .badge-active {
         background-color: #FEF3C7;
         color: #92400E;
@@ -176,14 +184,23 @@ def cosine_similarity(vec1, vec2):
     return float(dot_product / (norm_v1 * norm_v2))
 
 # ---------------------------------------------------------
-# 4. HERO HEADER & NAVIGATION
+# 4. HERO HEADER WITH LOGO & NAVIGATION
 # ---------------------------------------------------------
-st.markdown("""
-    <div class="hero-banner">
-        <h1>🎒 School Lost & Found Hub</h1>
-        <p>AI-powered visual search and smart inventory tracking for campus items</p>
-    </div>
-""", unsafe_allow_html=True)
+col_logo, col_title = st.columns([1, 6])
+
+with col_logo:
+    if LOGO_PATH and os.path.exists(LOGO_PATH):
+        st.image(LOGO_PATH, width=110)
+    else:
+        st.title("🎒")
+
+with col_title:
+    st.markdown("""
+        <div class="hero-banner">
+            <h1>School Lost & Found Hub</h1>
+            <p>AI-powered visual search and smart inventory tracking for campus items</p>
+        </div>
+    """, unsafe_allow_html=True)
 
 tab1, tab2, tab3 = st.tabs([
     "🔍 Search Lost Items", 
@@ -229,7 +246,7 @@ with tab1:
                     active_items = c.fetchall()
                     conn.close()
 
-                    # Set 35% minimum confidence threshold
+                    # 35% minimum confidence threshold to filter visual noise
                     SIMILARITY_THRESHOLD = 0.35
 
                     matches = []
