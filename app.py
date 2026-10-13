@@ -164,7 +164,7 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    # Database migration checks for existing tables
+    # Database migration checks
     c.execute("PRAGMA table_info(items)")
     columns = [col[1] for col in c.fetchall()]
     if "slot_number" not in columns:
@@ -261,7 +261,7 @@ with tab1:
     
     search_mode = st.radio(
         "Search Mode",
-        ["📷 Upload a Photo (AI Visual Search)", "✏️ Type Description & Filter"],
+        ["📷 Upload or Snap Photo (AI Visual Search)", "✏️ Type Description & Filter"],
         horizontal=True,
         label_visibility="collapsed"
     )
@@ -269,16 +269,27 @@ with tab1:
     st.markdown("---")
 
     # --- MODE 1: VISUAL AI SEARCH ---
-    if search_mode == "📷 Upload a Photo (AI Visual Search)":
+    if search_mode == "📷 Upload or Snap Photo (AI Visual Search)":
         with st.container(border=True):
             st.markdown("##### 📸 AI Camera Match")
-            uploaded_query = st.file_uploader(
-                "Upload a photo of your lost item (or a similar picture from the web)", 
-                type=["jpg", "jpeg", "png"]
-            )
             
+            photo_source = st.radio(
+                "Select Camera Input Method",
+                ["📁 Upload Image File", "📷 Snap Photo with Chromebook / Laptop Camera"],
+                horizontal=True
+            )
+
+            uploaded_query = None
+            if photo_source == "📁 Upload Image File":
+                uploaded_query = st.file_uploader(
+                    "Upload a photo of your lost item (or a similar picture from the web)", 
+                    type=["jpg", "jpeg", "png"]
+                )
+            else:
+                uploaded_query = st.camera_input("Take a picture of your lost item using your device camera")
+
             if uploaded_query is not None:
-                st.image(uploaded_query, caption="Your Uploaded Photo", width=220)
+                st.image(uploaded_query, caption="Selected Search Photo", width=220)
                 
                 with st.spinner("Extracting AI features & calculating vector similarity..."):
                     query_vec = extract_mediapipe_vector(uploaded_query)
@@ -408,64 +419,75 @@ with tab2:
         st.success("📍 **Classroom Pickup:** No office slot tag required. Enter your room number below (e.g., Room 211) so students can pick it up directly.")
 
     with st.container(border=True):
-        with st.form("register_form", clear_on_submit=True):
-            col_a, col_b = st.columns(2)
-            with col_a:
-                item_type = st.selectbox("Item Category", ["Water Bottle", "Jacket", "Lunch Box", "Backpack", "Other"])
-                location_found = st.text_input("Location / Room Found", placeholder="e.g., Room 211, Gymnasium, Library")
-            with col_b:
-                date_found = st.date_input("Date Found").strftime("%Y-%m-%d")
-                notes = st.text_area("Description & Unique Identifiers", placeholder="e.g., Pink Stanley tumbler with straw")
+        col_a, col_b = st.columns(2)
+        with col_a:
+            item_type = st.selectbox("Item Category", ["Water Bottle", "Jacket", "Lunch Box", "Backpack", "Other"])
+            location_found = st.text_input("Location / Room Found", placeholder="e.g., Room 211, Gymnasium, Library")
+        with col_b:
+            date_found = st.date_input("Date Found").strftime("%Y-%m-%d")
+            notes = st.text_area("Description & Unique Identifiers", placeholder="e.g., Pink Stanley tumbler with straw")
 
-            item_image = st.file_uploader("Item Photo (Used for AI feature matching)", type=["jpg", "jpeg", "png"])
-            
-            st.markdown("<br>", unsafe_allow_html=True)
-            submitted = st.form_submit_button("🚀 Submit Item to Inventory", use_container_width=True)
+        st.markdown("##### 📸 Photo Capture / Upload Option")
+        photo_reg_source = st.radio(
+            "Photo Input Method for Registration",
+            ["📁 Upload Image File", "📷 Snap Live Photo with Camera"],
+            horizontal=True
+        )
 
-            if submitted:
-                if not item_image:
-                    st.error("Please upload a photo of the item.")
-                elif not location_found.strip():
-                    st.error("Please specify the room or location where the item is kept.")
+        item_image = None
+        if photo_reg_source == "📁 Upload Image File":
+            item_image = st.file_uploader("Upload Item Photo (Used for AI feature matching)", type=["jpg", "jpeg", "png"])
+        else:
+            item_image = st.camera_input("Take a photo of the found item")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("🚀 Submit Item to Inventory", use_container_width=True):
+            if not item_image:
+                st.error("Please capture or upload a photo of the item.")
+            elif not location_found.strip():
+                st.error("Please specify the room or location where the item is kept.")
+            else:
+                if "Front Office" in holding_choice:
+                    assigned_slot = get_lowest_available_slot()
+                    holding_loc_val = "Front Office"
                 else:
-                    if "Front Office" in holding_choice:
-                        assigned_slot = get_lowest_available_slot()
-                        holding_loc_val = "Front Office"
-                    else:
-                        assigned_slot = None
-                        holding_loc_val = "Classroom"
+                    assigned_slot = None
+                    holding_loc_val = "Classroom"
 
-                    file_ext = os.path.splitext(item_image.name)[1]
-                    
-                    conn = sqlite3.connect(DB_FILE)
-                    c = conn.cursor()
-                    c.execute(
-                        "INSERT INTO items (slot_number, holding_location, item_type, location_found, date_found, notes, image_path) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                        (assigned_slot, holding_loc_val, item_type, location_found, date_found, notes, "")
-                    )
-                    new_id = c.lastrowid
-                    
-                    img_path = os.path.join(UPLOAD_DIR, f"item_{new_id}{file_ext}")
-                    with open(img_path, "wb") as f:
-                        f.write(item_image.getbuffer())
+                # Standardize file extension from upload or camera
+                file_ext = ".jpg"
+                if hasattr(item_image, "name") and item_image.name:
+                    file_ext = os.path.splitext(item_image.name)[1] or ".jpg"
+                
+                conn = sqlite3.connect(DB_FILE)
+                c = conn.cursor()
+                c.execute(
+                    "INSERT INTO items (slot_number, holding_location, item_type, location_found, date_found, notes, image_path) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (assigned_slot, holding_loc_val, item_type, location_found, date_found, notes, "")
+                )
+                new_id = c.lastrowid
+                
+                img_path = os.path.join(UPLOAD_DIR, f"item_{new_id}{file_ext}")
+                with open(img_path, "wb") as f:
+                    f.write(item_image.getbuffer())
 
-                    vec_path = os.path.join(VECTOR_DIR, f"vector_{new_id}.npy")
-                    vector = extract_mediapipe_vector(item_image)
-                    
-                    if vector is not None:
-                        np.save(vec_path, vector)
-                    else:
-                        vec_path = None
+                vec_path = os.path.join(VECTOR_DIR, f"vector_{new_id}.npy")
+                vector = extract_mediapipe_vector(item_image)
+                
+                if vector is not None:
+                    np.save(vec_path, vector)
+                else:
+                    vec_path = None
 
-                    c.execute("UPDATE items SET image_path = ?, vector_path = ? WHERE id = ?", (img_path, vec_path, new_id))
-                    conn.commit()
-                    conn.close()
+                c.execute("UPDATE items SET image_path = ?, vector_path = ? WHERE id = ?", (img_path, vec_path, new_id))
+                conn.commit()
+                conn.close()
 
-                    st.balloons()
-                    if assigned_slot:
-                        st.success(f"Item successfully registered! Tag with **Slot #{assigned_slot}** for office storage.")
-                    else:
-                        st.success(f"Item successfully registered! Saved for pickup in **{location_found}**.")
+                st.balloons()
+                if assigned_slot:
+                    st.success(f"Item successfully registered! Tag with **Slot #{assigned_slot}** for office storage.")
+                else:
+                    st.success(f"Item successfully registered! Saved for pickup in **{location_found}**.")
 
 # =========================================================
 # TAB 3: STAFF & TEACHER CONSOLE
