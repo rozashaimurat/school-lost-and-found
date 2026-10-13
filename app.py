@@ -13,6 +13,7 @@ from mediapipe.tasks.python import vision
 # ---------------------------------------------------------
 # 1. PAGE CONFIGURATION & CUSTOM CSS STYLING
 # ---------------------------------------------------------
+# Automatically detect logo file name
 if os.path.exists("1200x630wa.png"):
     LOGO_PATH = "1200x630wa.png"
 elif os.path.exists("logo.png"):
@@ -21,6 +22,7 @@ else:
     LOGO_PATH = None
 
 def get_base64_image(image_path):
+    """Convert local image to base64 string for direct HTML embedding inside hero banner."""
     if image_path and os.path.exists(image_path):
         with open(image_path, "rb") as f:
             return base64.b64encode(f.read()).decode()
@@ -35,10 +37,13 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# Custom CSS Injection
 st.markdown("""
     <style>
+    /* Global Page Styling */
     .main { background-color: #F8FAFC; }
     
+    /* Hero Header Banner */
     .hero-banner {
         background: linear-gradient(135deg, #4F46E5 0%, #3B82F6 100%);
         padding: 1.8rem 2.2rem;
@@ -63,6 +68,7 @@ st.markdown("""
         margin: 0 !important;
     }
 
+    /* Tab Button Styling */
     .stTabs [data-baseweb="tab-list"] { gap: 10px; }
     .stTabs [data-baseweb="tab"] {
         border-radius: 10px !important;
@@ -79,10 +85,12 @@ st.markdown("""
         box-shadow: 0 4px 12px rgba(79, 70, 229, 0.2) !important;
     }
 
+    /* Card Container Styling */
     div[data-testid="stVerticalBlock"] > div[data-testid="stBlock"] {
         border-radius: 12px;
     }
 
+    /* Custom Status Badges & Slot Tags */
     .badge-active {
         background-color: #FEF3C7;
         color: #92400E;
@@ -157,7 +165,7 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    # Check for table columns in case of existing DB migration
+    # Database migration support for existing DB files
     c.execute("PRAGMA table_info(items)")
     columns = [col[1] for col in c.fetchall()]
     if "slot_number" not in columns:
@@ -170,7 +178,7 @@ def init_db():
 init_db()
 
 def get_lowest_available_slot():
-    """Finds lowest positive slot number for active items in Front Office."""
+    """Finds the lowest positive slot number not occupied by an active Front Office item."""
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("SELECT slot_number FROM items WHERE is_returned = 0 AND holding_location = 'Front Office' AND slot_number IS NOT NULL")
@@ -218,7 +226,7 @@ def cosine_similarity(vec1, vec2):
     return float(dot_product / (norm_v1 * norm_v2))
 
 # ---------------------------------------------------------
-# 4. HERO HEADER WITH LOGO
+# 4. HERO HEADER WITH INTEGRATED LOGO
 # ---------------------------------------------------------
 if logo_b64:
     logo_html = f'<img src="data:image/png;base64,{logo_b64}" style="height: 95px; border-radius: 12px; background-color: #FFFFFF; padding: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); flex-shrink: 0;" />'
@@ -257,6 +265,7 @@ with tab1:
 
     st.markdown("---")
 
+    # --- MODE 1: VISUAL AI SEARCH ---
     if search_mode == "📷 Upload a Photo (AI Visual Search)":
         with st.container(border=True):
             st.markdown("##### 📸 AI Camera Match")
@@ -278,7 +287,8 @@ with tab1:
                     active_items = c.fetchall()
                     conn.close()
 
-                    SIMILARITY_THRESHOLD = 0.35
+                    # Threshold set to 0.15 to account for background noise
+                    SIMILARITY_THRESHOLD = 0.15
                     matches = []
 
                     for item in active_items:
@@ -294,7 +304,7 @@ with tab1:
 
                     st.markdown("#### 🎯 Best Visual Matches")
                     if not matches:
-                        st.info("No matching items found with sufficient visual similarity (minimum 35% match required). Try uploading a clearer photo or using Keyword Search.")
+                        st.info("No matching items found. Try uploading a clearer photo or using Keyword Search.")
                     else:
                         cols = st.columns(3)
                         for idx, (score, item) in enumerate(matches[:6]):
@@ -319,6 +329,7 @@ with tab1:
                                     if notes:
                                         st.markdown(f"📝 **Notes:** {notes}")
 
+    # --- MODE 2: TEXT & FILTER SEARCH ---
     else:
         with st.container(border=True):
             st.markdown("##### 🔍 Keyword & Category Search")
@@ -509,7 +520,7 @@ with tab3:
                             st.caption(f"Notes: {rec_notes}")
                     
                     with col_action:
-                        btn_label = f"Mark Returned (Slot #{rec_slot})" if rec_slot else "Mark Returned"
+                        btn_label = f"Mark Returned (Frees Slot #{rec_slot})" if rec_slot else "Mark Returned"
                         if st.button(btn_label, key=f"ret_{rec_id}", use_container_width=True):
                             conn = sqlite3.connect(DB_FILE)
                             c = conn.cursor()
