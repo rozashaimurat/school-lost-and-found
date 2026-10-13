@@ -142,7 +142,7 @@ if not os.path.exists(MODEL_PATH):
         urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
 
 # ---------------------------------------------------------
-# 2. DATABASE INITIALIZATION & SLOT LOGIC
+# 2. DATABASE INITIALIZATION & SLOT RECYCLING
 # ---------------------------------------------------------
 def init_db():
     conn = sqlite3.connect(DB_FILE)
@@ -159,23 +159,29 @@ def init_db():
             image_path TEXT NOT NULL,
             vector_path TEXT,
             is_returned INTEGER DEFAULT 0,
+            claimed_by TEXT,
+            returned_at TIMESTAMP,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    # Database migration support
+    # Database migration checks for existing tables
     c.execute("PRAGMA table_info(items)")
     columns = [col[1] for col in c.fetchall()]
     if "slot_number" not in columns:
         c.execute("ALTER TABLE items ADD COLUMN slot_number INTEGER")
     if "holding_location" not in columns:
         c.execute("ALTER TABLE items ADD COLUMN holding_location TEXT DEFAULT 'Front Office'")
+    if "claimed_by" not in columns:
+        c.execute("ALTER TABLE items ADD COLUMN claimed_by TEXT")
+    if "returned_at" not in columns:
+        c.execute("ALTER TABLE items ADD COLUMN returned_at TIMESTAMP")
     conn.commit()
     conn.close()
 
 init_db()
 
 def get_lowest_available_slot():
-    """Finds lowest available slot number for active items in Front Office."""
+    """Finds lowest positive slot number available for active items in the Front Office."""
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("SELECT slot_number FROM items WHERE is_returned = 0 AND holding_location = 'Front Office' AND slot_number IS NOT NULL")
@@ -284,6 +290,7 @@ with tab1:
                     active_items = c.fetchall()
                     conn.close()
 
+                    # Threshold set to 0.15 to account for background differences
                     SIMILARITY_THRESHOLD = 0.15
                     matches = []
 
@@ -473,7 +480,7 @@ with tab3:
     if passcode == "1234":
         st.success("Authenticated as Staff / Teacher")
         
-        # Room / Location Filter for Teachers
+        # Room / Location Filter
         col_f1, col_f2 = st.columns([1, 2])
         with col_f1:
             view_filter = st.selectbox(
@@ -488,7 +495,7 @@ with tab3:
         c.execute("SELECT id, slot_number, holding_location, item_type, location_found, date_found, notes, image_path FROM items WHERE is_returned = 0 ORDER BY holding_location ASC, slot_number ASC")
         active_records = c.fetchall()
 
-        c.execute("SELECT id, slot_number, holding_location, item_type, location_found, date_found, notes, image_path FROM items WHERE is_returned = 1 ORDER BY id DESC")
+        c.execute("SELECT id, slot_number, holding_location, item_type, location_found, date_found, notes, image_path, claimed_by, returned_at FROM items WHERE is_returned = 1 ORDER BY returned_at DESC")
         returned_records = c.fetchall()
         conn.close()
 
@@ -525,7 +532,7 @@ with tab3:
                 rec_id, rec_slot, rec_holding, rec_type, rec_loc, rec_date, rec_notes, rec_img = record
                 
                 with st.container(border=True):
-                    col_img, col_info, col_action = st.columns([1.2, 2.8, 1.5])
+                    col_img, col_info, col_action = st.columns([1.2, 2.5, 1.8])
                     
                     with col_img:
                         if os.path.exists(rec_img):
@@ -544,11 +551,23 @@ with tab3:
                             st.caption(f"Notes: {rec_notes}")
                     
                     with col_action:
-                        btn_text = f"Mark Returned (Frees Slot #{rec_slot})" if rec_slot else "Mark Returned (Remove from List)"
+                        claimed_input = st.text_input(
+                            "Claimed By (Optional Name / ID)", 
+                            key=f"claim_input_{rec_id}", 
+                            placeholder="e.g. Alex Smith (or leave blank)"
+                        )
+                        btn_text = f"Mark Returned (Frees Slot #{rec_slot})" if rec_slot else "Mark Returned"
+                        
                         if st.button(btn_text, key=f"ret_{rec_id}", use_container_width=True):
                             conn = sqlite3.connect(DB_FILE)
                             c = conn.cursor()
-                            c.execute("UPDATE items SET is_returned = 1 WHERE id = ?", (rec_id,))
+                            c.execute("""
+                                UPDATE items 
+                                SET is_returned = 1, 
+                                    claimed_by = ?, 
+                                    returned_at = CURRENT_TIMESTAMP 
+                                WHERE id = ?
+                            """, (claimed_input.strip() if claimed_input.strip() else "Unspecified Student", rec_id))
                             conn.commit()
                             conn.close()
                             st.success(f"Item #{rec_id} marked as returned!")
@@ -558,9 +577,4 @@ with tab3:
             st.markdown("---")
             st.markdown("#### ✅ Archive (Returned Items)")
             for record in returned_records:
-                rec_id, rec_slot, rec_holding, rec_type, rec_loc, rec_date, rec_notes, rec_img = record
-                with st.container(border=True):
-                    loc_info = f"Office Slot #{rec_slot}" if rec_slot else f"Classroom ({rec_loc})"
-                    st.markdown(f"**Item #{rec_id} ({rec_type})** — Formerly {loc_info} — Returned to Owner")
-    elif passcode:
-        st.error("Incorrect passcode.")
+                rec_id,
