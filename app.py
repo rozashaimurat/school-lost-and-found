@@ -450,4 +450,198 @@ with tab2:
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button("🚀 Submit Item to Inventory", use_container_width=True):
             if not item_image:
-                st.error("
+                st.error("Please capture or upload a photo of the item.")
+            elif not location_found.strip():
+                st.error("Please specify the room or location where the item is kept.")
+            else:
+                if "Front Office" in holding_choice:
+                    assigned_slot = get_lowest_available_slot()
+                    holding_loc_val = "Front Office"
+                else:
+                    assigned_slot = None
+                    holding_loc_val = "Classroom"
+
+                file_ext = ".jpg"
+                if hasattr(item_image, "name") and item_image.name:
+                    file_ext = os.path.splitext(item_image.name)[1] or ".jpg"
+                
+                conn = sqlite3.connect(DB_FILE)
+                c = conn.cursor()
+                c.execute(
+                    "INSERT INTO items (slot_number, holding_location, item_type, location_found, date_found, notes, image_path) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (assigned_slot, holding_loc_val, item_type, location_found, date_found, notes, "")
+                )
+                new_id = c.lastrowid
+                
+                img_path = os.path.join(UPLOAD_DIR, f"item_{new_id}{file_ext}")
+                with open(img_path, "wb") as f:
+                    f.write(item_image.getbuffer())
+
+                vec_path = os.path.join(VECTOR_DIR, f"vector_{new_id}.npy")
+                vector = extract_mediapipe_vector(item_image)
+                
+                if vector is not None:
+                    np.save(vec_path, vector)
+                else:
+                    vec_path = None
+
+                c.execute("UPDATE items SET image_path = ?, vector_path = ? WHERE id = ?", (img_path, vec_path, new_id))
+                conn.commit()
+                conn.close()
+
+                st.balloons()
+                if assigned_slot:
+                    st.success(f"Item successfully registered! Tag with **Slot #{assigned_slot}** for office storage.")
+                else:
+                    st.success(f"Item successfully registered! Saved for pickup in **{location_found}**.")
+
+# =========================================================
+# TAB 3: STAFF & TEACHER CONSOLE
+# =========================================================
+with tab3:
+    st.markdown("### 🔐 Staff & Teacher Console")
+    st.caption("Teachers and office staff can filter items, mark them as returned, and check pickup history.")
+    
+    passcode = st.text_input("Enter Staff / Teacher Passcode", type="password")
+    
+    if passcode == "1234":
+        st.success("Authenticated as Staff / Teacher")
+        
+        # Room / Location Filter for Active Inventory
+        col_f1, col_f2 = st.columns([1, 2])
+        with col_f1:
+            view_filter = st.selectbox(
+                "Show Active Items From",
+                ["All Unclaimed Items", "🏢 Front Office Only", "🏫 Classroom Items Only"]
+            )
+        with col_f2:
+            room_search = st.text_input("Filter Active Items by Room / Keyword", placeholder="e.g., 211, Stanley, Jacket")
+
+        conn = sqlite3.connect(DB_FILE)
+        c = conn.cursor()
+        c.execute("SELECT id, slot_number, holding_location, item_type, location_found, date_found, notes, image_path FROM items WHERE is_returned = 0 ORDER BY holding_location ASC, slot_number ASC")
+        active_records = c.fetchall()
+
+        c.execute("SELECT id, slot_number, holding_location, item_type, location_found, date_found, notes, image_path, claimed_by, returned_at FROM items WHERE is_returned = 1 ORDER BY returned_at DESC")
+        returned_records = c.fetchall()
+        conn.close()
+
+        # Apply Staff Console Filters
+        filtered_active = []
+        for rec in active_records:
+            rec_id, rec_slot, rec_holding, rec_type, rec_loc, rec_date, rec_notes, rec_img = rec
+            
+            if view_filter == "🏢 Front Office Only" and rec_holding != "Front Office":
+                continue
+            if view_filter == "🏫 Classroom Items Only" and rec_holding == "Front Office":
+                continue
+            
+            if room_search.strip():
+                kw = room_search.lower().strip()
+                combined = f"{rec_type} {rec_loc} {rec_notes or ''}".lower()
+                if kw not in combined:
+                    continue
+            
+            filtered_active.append(rec)
+
+        m_col1, m_col2, m_col3 = st.columns(3)
+        m_col1.metric("Total Items Logged", len(active_records) + len(returned_records))
+        m_col2.metric("Active Unclaimed", len(active_records))
+        m_col3.metric("Returned to Owner", len(returned_records))
+
+        st.markdown("---")
+        st.markdown(f"#### 🏷️ Active Unclaimed Items ({len(filtered_active)} showing)")
+        
+        if not filtered_active:
+            st.info("No unclaimed items match your filter criteria.")
+        else:
+            for record in filtered_active:
+                rec_id, rec_slot, rec_holding, rec_type, rec_loc, rec_date, rec_notes, rec_img = record
+                
+                with st.container(border=True):
+                    col_img, col_info, col_action = st.columns([1.2, 2.5, 1.8])
+                    
+                    with col_img:
+                        if os.path.exists(rec_img):
+                            st.image(rec_img, use_container_width=True)
+                    
+                    with col_info:
+                        if rec_holding == "Front Office" and rec_slot:
+                            tag_html = f"<span class='slot-tag'>Office Slot #{rec_slot}</span>"
+                        else:
+                            tag_html = f"<span class='room-tag'>🏫 {rec_loc}</span>"
+
+                        st.markdown(f"#### {rec_type} {tag_html}", unsafe_allow_html=True)
+                        st.markdown(f"📍 **Location / Room:** {rec_loc}")
+                        st.markdown(f"📅 **Date Found:** {rec_date}")
+                        if rec_notes:
+                            st.caption(f"Notes: {rec_notes}")
+                    
+                    with col_action:
+                        claimed_input = st.text_input(
+                            "Claimed By (Optional Name / ID)", 
+                            key=f"claim_input_{rec_id}", 
+                            placeholder="e.g. Alex Smith (or leave blank)"
+                        )
+                        btn_text = f"Mark Returned (Frees Slot #{rec_slot})" if rec_slot else "Mark Returned"
+                        
+                        if st.button(btn_text, key=f"ret_{rec_id}", use_container_width=True):
+                            conn = sqlite3.connect(DB_FILE)
+                            c = conn.cursor()
+                            c.execute("""
+                                UPDATE items 
+                                SET is_returned = 1, 
+                                    claimed_by = ?, 
+                                    returned_at = CURRENT_TIMESTAMP 
+                                WHERE id = ?
+                            """, (claimed_input.strip() if claimed_input.strip() else "Unspecified Student", rec_id))
+                            conn.commit()
+                            conn.close()
+                            st.success(f"Item #{rec_id} marked as returned!")
+                            st.rerun()
+
+        # =========================================================
+        # RETURNED ITEMS ARCHIVE (WITH SEARCH & VISUAL PREVIEW)
+        # =========================================================
+        if returned_records:
+            st.markdown("---")
+            st.markdown("#### ✅ Archive / Returned Items History")
+            st.caption("Search past returned items to verify student pickups or correct mix-ups.")
+
+            archive_search = st.text_input("Search Returned History (by student name, item, or room)", placeholder="e.g., Alex, Stanley, Room 211")
+            
+            filtered_returned = []
+            for record in returned_records:
+                rec_id, rec_slot, rec_holding, rec_type, rec_loc, rec_date, rec_notes, rec_img, rec_claimed, rec_ret_at = record
+                
+                if archive_search.strip():
+                    kw = archive_search.lower().strip()
+                    combined = f"{rec_type} {rec_loc} {rec_notes or ''} {rec_claimed or ''}".lower()
+                    if kw not in combined:
+                        continue
+                filtered_returned.append(record)
+
+            if not filtered_returned:
+                st.info("No returned items match your archive search.")
+            else:
+                for record in filtered_returned:
+                    rec_id, rec_slot, rec_holding, rec_type, rec_loc, rec_date, rec_notes, rec_img, rec_claimed, rec_ret_at = record
+                    
+                    with st.container(border=True):
+                        col_ret_img, col_ret_info = st.columns([1.2, 4.3])
+                        
+                        with col_ret_img:
+                            if os.path.exists(rec_img):
+                                st.image(rec_img, use_container_width=True)
+                        
+                        with col_ret_info:
+                            loc_info = f"Office Slot #{rec_slot}" if rec_slot else f"Classroom ({rec_loc})"
+                            badge_html = '<span class="badge-returned">✅ Returned to Owner</span>'
+                            st.markdown(f"#### Item #{rec_id}: {rec_type} {badge_html}", unsafe_allow_html=True)
+                            st.markdown(f"👤 **Claimed By:** `{rec_claimed if rec_claimed else 'Unspecified Student'}`")
+                            st.markdown(f"📍 **Origin Location:** {loc_info}")
+                            st.markdown(f"📅 **Found Date:** {rec_date} | **Returned Date:** {rec_ret_at}")
+                            if rec_notes:
+                                st.caption(f"Notes: {rec_notes}")
+    elif passcode:
+        st.error("Incorrect passcode.")
