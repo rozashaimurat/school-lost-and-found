@@ -290,7 +290,6 @@ with tab1:
                     active_items = c.fetchall()
                     conn.close()
 
-                    # Threshold set to 0.15 to account for background differences
                     SIMILARITY_THRESHOLD = 0.15
                     matches = []
 
@@ -473,22 +472,22 @@ with tab2:
 # =========================================================
 with tab3:
     st.markdown("### 🔐 Staff & Teacher Console")
-    st.caption("Teachers and office staff can filter items and mark them as returned when claimed by students.")
+    st.caption("Teachers and office staff can filter items, mark them as returned, and check pickup history.")
     
     passcode = st.text_input("Enter Staff / Teacher Passcode", type="password")
     
     if passcode == "1234":
         st.success("Authenticated as Staff / Teacher")
         
-        # Room / Location Filter
+        # Room / Location Filter for Active Inventory
         col_f1, col_f2 = st.columns([1, 2])
         with col_f1:
             view_filter = st.selectbox(
-                "Show Items From",
+                "Show Active Items From",
                 ["All Unclaimed Items", "🏢 Front Office Only", "🏫 Classroom Items Only"]
             )
         with col_f2:
-            room_search = st.text_input("Filter by Room / Keyword (e.g., 211)", placeholder="e.g., 211, Stanley, Jacket")
+            room_search = st.text_input("Filter Active Items by Room / Keyword", placeholder="e.g., 211, Stanley, Jacket")
 
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
@@ -573,8 +572,48 @@ with tab3:
                             st.success(f"Item #{rec_id} marked as returned!")
                             st.rerun()
 
+        # =========================================================
+        # RETURNED ITEMS ARCHIVE (WITH SEARCH & VISUAL PREVIEW)
+        # =========================================================
         if returned_records:
             st.markdown("---")
-            st.markdown("#### ✅ Archive (Returned Items)")
+            st.markdown("#### ✅ Archive / Returned Items History")
+            st.caption("Search past returned items to verify student pickups or correct mix-ups.")
+
+            archive_search = st.text_input("Search Returned History (by student name, item, or room)", placeholder="e.g., Alex, Stanley, Room 211")
+            
+            filtered_returned = []
             for record in returned_records:
-                rec_id,
+                rec_id, rec_slot, rec_holding, rec_type, rec_loc, rec_date, rec_notes, rec_img, rec_claimed, rec_ret_at = record
+                
+                if archive_search.strip():
+                    kw = archive_search.lower().strip()
+                    combined = f"{rec_type} {rec_loc} {rec_notes or ''} {rec_claimed or ''}".lower()
+                    if kw not in combined:
+                        continue
+                filtered_returned.append(record)
+
+            if not filtered_returned:
+                st.info("No returned items match your archive search.")
+            else:
+                for record in filtered_returned:
+                    rec_id, rec_slot, rec_holding, rec_type, rec_loc, rec_date, rec_notes, rec_img, rec_claimed, rec_ret_at = record
+                    
+                    with st.container(border=True):
+                        col_ret_img, col_ret_info = st.columns([1.2, 4.3])
+                        
+                        with col_ret_img:
+                            if os.path.exists(rec_img):
+                                st.image(rec_img, use_container_width=True)
+                        
+                        with col_ret_info:
+                            loc_info = f"Office Slot #{rec_slot}" if rec_slot else f"Classroom ({rec_loc})"
+                            badge_html = '<span class="badge-returned">✅ Returned to Owner</span>'
+                            st.markdown(f"#### Item #{rec_id}: {rec_type} {badge_html}", unsafe_allow_html=True)
+                            st.markdown(f"👤 **Claimed By:** `{rec_claimed if rec_claimed else 'Unspecified Student'}`")
+                            st.markdown(f"📍 **Origin Location:** {loc_info}")
+                            st.markdown(f"📅 **Found Date:** {rec_date} | **Returned Date:** {rec_ret_at}")
+                            if rec_notes:
+                                st.caption(f"Notes: {rec_notes}")
+    elif passcode:
+        st.error("Incorrect passcode.")
