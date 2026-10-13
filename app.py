@@ -13,7 +13,6 @@ from mediapipe.tasks.python import vision
 # ---------------------------------------------------------
 # 1. PAGE CONFIGURATION & CUSTOM CSS STYLING
 # ---------------------------------------------------------
-# Automatically detect logo file name
 if os.path.exists("1200x630wa.png"):
     LOGO_PATH = "1200x630wa.png"
 elif os.path.exists("logo.png"):
@@ -22,7 +21,6 @@ else:
     LOGO_PATH = None
 
 def get_base64_image(image_path):
-    """Convert local image to base64 string for direct HTML embedding inside hero banner."""
     if image_path and os.path.exists(image_path):
         with open(image_path, "rb") as f:
             return base64.b64encode(f.read()).decode()
@@ -37,7 +35,6 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Custom CSS Injection
 st.markdown("""
     <style>
     /* Global Page Styling */
@@ -90,7 +87,7 @@ st.markdown("""
         border-radius: 12px;
     }
 
-    /* Custom Status Badges & Slot Tags */
+    /* Custom Status Badges & Tags */
     .badge-active {
         background-color: #FEF3C7;
         color: #92400E;
@@ -165,7 +162,7 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    # Database migration support for existing DB files
+    # Database migration support
     c.execute("PRAGMA table_info(items)")
     columns = [col[1] for col in c.fetchall()]
     if "slot_number" not in columns:
@@ -178,7 +175,7 @@ def init_db():
 init_db()
 
 def get_lowest_available_slot():
-    """Finds the lowest positive slot number not occupied by an active Front Office item."""
+    """Finds lowest available slot number for active items in Front Office."""
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("SELECT slot_number FROM items WHERE is_returned = 0 AND holding_location = 'Front Office' AND slot_number IS NOT NULL")
@@ -287,7 +284,6 @@ with tab1:
                     active_items = c.fetchall()
                     conn.close()
 
-                    # Threshold set to 0.15 to account for background noise
                     SIMILARITY_THRESHOLD = 0.15
                     matches = []
 
@@ -317,7 +313,7 @@ with tab1:
                                     if holding_loc == "Front Office" and slot_num:
                                         tag_html = f"<span class='slot-tag'>Office Slot #{slot_num}</span>"
                                     else:
-                                        tag_html = f"<span class='room-tag'>🏫 Classroom Pickup</span>"
+                                        tag_html = f"<span class='room-tag'>🏫 {loc}</span>"
 
                                     st.markdown(f"#### {item_type} {tag_html}", unsafe_allow_html=True)
                                     conf_pct = max(0.0, min(1.0, score))
@@ -342,7 +338,7 @@ with tab1:
             with col2:
                 search_text = st.text_input(
                     "Keyword Search", 
-                    placeholder="e.g., navy blue, hydroflask, gym, room 104"
+                    placeholder="e.g., navy blue, hydroflask, gym, 211"
                 )
 
         conn = sqlite3.connect(DB_FILE)
@@ -379,7 +375,7 @@ with tab1:
                         if holding_loc == "Front Office" and slot_num:
                             tag_html = f"<span class='slot-tag'>Office Slot #{slot_num}</span>"
                         else:
-                            tag_html = f"<span class='room-tag'>🏫 Classroom Pickup</span>"
+                            tag_html = f"<span class='room-tag'>🏫 {loc}</span>"
 
                         st.markdown(f"#### {item_type} {tag_html}", unsafe_allow_html=True)
                         st.markdown(f"📍 **Location / Room:** {loc}")
@@ -403,17 +399,17 @@ with tab2:
         next_slot = get_lowest_available_slot()
         st.info(f"🏷️ **Auto-Assigned Office Tag:** This item will be assigned to **Bin / Hook Slot #{next_slot}** in the front office.")
     else:
-        st.success("📍 **Classroom Pickup:** No office slot tag required. Students will see the classroom location directly in search results.")
+        st.success("📍 **Classroom Pickup:** No office slot tag required. Enter your room number below (e.g., Room 211) so students can pick it up directly.")
 
     with st.container(border=True):
         with st.form("register_form", clear_on_submit=True):
             col_a, col_b = st.columns(2)
             with col_a:
                 item_type = st.selectbox("Item Category", ["Water Bottle", "Jacket", "Lunch Box", "Backpack", "Other"])
-                location_found = st.text_input("Location / Room Found", placeholder="e.g., Room 204, Gymnasium bleachers, Library")
+                location_found = st.text_input("Location / Room Found", placeholder="e.g., Room 211, Gymnasium, Library")
             with col_b:
                 date_found = st.date_input("Date Found").strftime("%Y-%m-%d")
-                notes = st.text_area("Description & Unique Identifiers", placeholder="e.g., Blue stainless steel bottle with stickers")
+                notes = st.text_area("Description & Unique Identifiers", placeholder="e.g., Pink Stanley tumbler with straw")
 
             item_image = st.file_uploader("Item Photo (Used for AI feature matching)", type=["jpg", "jpeg", "png"])
             
@@ -424,7 +420,7 @@ with tab2:
                 if not item_image:
                     st.error("Please upload a photo of the item.")
                 elif not location_found.strip():
-                    st.error("Please specify the location or room where the item was found.")
+                    st.error("Please specify the room or location where the item is kept.")
                 else:
                     if "Front Office" in holding_choice:
                         assigned_slot = get_lowest_available_slot()
@@ -461,22 +457,32 @@ with tab2:
 
                     st.balloons()
                     if assigned_slot:
-                        st.success(f"Item successfully registered! Attach Tag **Slot #{assigned_slot}** and place in office bin.")
+                        st.success(f"Item successfully registered! Tag with **Slot #{assigned_slot}** for office storage.")
                     else:
-                        st.success(f"Item successfully registered! It is logged as available for pickup in **{location_found}**.")
+                        st.success(f"Item successfully registered! Saved for pickup in **{location_found}**.")
 
 # =========================================================
-# TAB 3: STAFF INVENTORY MANAGEMENT
+# TAB 3: STAFF & TEACHER CONSOLE
 # =========================================================
 with tab3:
-    st.markdown("### 🔐 Staff Management Console")
-    st.caption("Authorized staff members can update item statuses and confirm returns.")
+    st.markdown("### 🔐 Staff & Teacher Console")
+    st.caption("Teachers and office staff can filter items and mark them as returned when claimed by students.")
     
-    passcode = st.text_input("Enter Staff Passcode", type="password")
+    passcode = st.text_input("Enter Staff / Teacher Passcode", type="password")
     
     if passcode == "1234":
-        st.success("Authenticated as Staff")
+        st.success("Authenticated as Staff / Teacher")
         
+        # Room / Location Filter for Teachers
+        col_f1, col_f2 = st.columns([1, 2])
+        with col_f1:
+            view_filter = st.selectbox(
+                "Show Items From",
+                ["All Unclaimed Items", "🏢 Front Office Only", "🏫 Classroom Items Only"]
+            )
+        with col_f2:
+            room_search = st.text_input("Filter by Room / Keyword (e.g., 211)", placeholder="e.g., 211, Stanley, Jacket")
+
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
         c.execute("SELECT id, slot_number, holding_location, item_type, location_found, date_found, notes, image_path FROM items WHERE is_returned = 0 ORDER BY holding_location ASC, slot_number ASC")
@@ -486,18 +492,36 @@ with tab3:
         returned_records = c.fetchall()
         conn.close()
 
+        # Apply Staff Console Filters
+        filtered_active = []
+        for rec in active_records:
+            rec_id, rec_slot, rec_holding, rec_type, rec_loc, rec_date, rec_notes, rec_img = rec
+            
+            if view_filter == "🏢 Front Office Only" and rec_holding != "Front Office":
+                continue
+            if view_filter == "🏫 Classroom Items Only" and rec_holding == "Front Office":
+                continue
+            
+            if room_search.strip():
+                kw = room_search.lower().strip()
+                combined = f"{rec_type} {rec_loc} {rec_notes or ''}".lower()
+                if kw not in combined:
+                    continue
+            
+            filtered_active.append(rec)
+
         m_col1, m_col2, m_col3 = st.columns(3)
         m_col1.metric("Total Items Logged", len(active_records) + len(returned_records))
         m_col2.metric("Active Unclaimed", len(active_records))
         m_col3.metric("Returned to Owner", len(returned_records))
 
         st.markdown("---")
-        st.markdown("#### 🏷️ Active Unclaimed Inventory")
+        st.markdown(f"#### 🏷️ Active Unclaimed Items ({len(filtered_active)} showing)")
         
-        if not active_records:
-            st.info("No active unclaimed items in inventory.")
+        if not filtered_active:
+            st.info("No unclaimed items match your filter criteria.")
         else:
-            for record in active_records:
+            for record in filtered_active:
                 rec_id, rec_slot, rec_holding, rec_type, rec_loc, rec_date, rec_notes, rec_img = record
                 
                 with st.container(border=True):
@@ -511,7 +535,7 @@ with tab3:
                         if rec_holding == "Front Office" and rec_slot:
                             tag_html = f"<span class='slot-tag'>Office Slot #{rec_slot}</span>"
                         else:
-                            tag_html = f"<span class='room-tag'>🏫 Classroom Pickup</span>"
+                            tag_html = f"<span class='room-tag'>🏫 {rec_loc}</span>"
 
                         st.markdown(f"#### {rec_type} {tag_html}", unsafe_allow_html=True)
                         st.markdown(f"📍 **Location / Room:** {rec_loc}")
@@ -520,13 +544,14 @@ with tab3:
                             st.caption(f"Notes: {rec_notes}")
                     
                     with col_action:
-                        btn_label = f"Mark Returned (Frees Slot #{rec_slot})" if rec_slot else "Mark Returned"
-                        if st.button(btn_label, key=f"ret_{rec_id}", use_container_width=True):
+                        btn_text = f"Mark Returned (Frees Slot #{rec_slot})" if rec_slot else "Mark Returned (Remove from List)"
+                        if st.button(btn_text, key=f"ret_{rec_id}", use_container_width=True):
                             conn = sqlite3.connect(DB_FILE)
                             c = conn.cursor()
                             c.execute("UPDATE items SET is_returned = 1 WHERE id = ?", (rec_id,))
                             conn.commit()
                             conn.close()
+                            st.success(f"Item #{rec_id} marked as returned!")
                             st.rerun()
 
         if returned_records:
@@ -535,7 +560,7 @@ with tab3:
             for record in returned_records:
                 rec_id, rec_slot, rec_holding, rec_type, rec_loc, rec_date, rec_notes, rec_img = record
                 with st.container(border=True):
-                    loc_info = f"Slot #{rec_slot}" if rec_slot else f"Classroom ({rec_loc})"
+                    loc_info = f"Office Slot #{rec_slot}" if rec_slot else f"Classroom ({rec_loc})"
                     st.markdown(f"**Item #{rec_id} ({rec_type})** — Formerly {loc_info} — Returned to Owner")
     elif passcode:
         st.error("Incorrect passcode.")
