@@ -11,120 +11,105 @@ from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
 # ---------------------------------------------------------
-# 1. PAGE CONFIGURATION & CUSTOM CSS STYLING
+# 1. PAGE CONFIGURATION & CALM NAVY/WHITE CSS THEME
 # ---------------------------------------------------------
-if os.path.exists("1200x630wa.png"):
-    LOGO_PATH = "1200x630wa.png"
-elif os.path.exists("logo.png"):
-    LOGO_PATH = "logo.png"
-else:
-    LOGO_PATH = None
-
-def get_base64_image(image_path):
-    if image_path and os.path.exists(image_path):
-        with open(image_path, "rb") as f:
-            return base64.b64encode(f.read()).decode()
-    return None
-
-logo_b64 = get_base64_image(LOGO_PATH)
-
 st.set_page_config(
-    page_title="School Lost & Found Hub",
-    page_icon=LOGO_PATH if LOGO_PATH else "🎒",
+    page_title="LISA Lost & Found",
+    page_icon="🎒",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
+# Custom CSS: Calm white background, navy typography, subtle borders
 st.markdown("""
     <style>
-    /* Global Page Styling */
-    .main { background-color: #F8FAFC; }
+    /* Global Background and Typography */
+    .stApp {
+        background-color: #F8FAFC;
+        color: #0F172A;
+    }
     
-    /* Hero Header Banner */
-    .hero-banner {
-        background: linear-gradient(135deg, #4F46E5 0%, #3B82F6 100%);
-        padding: 1.8rem 2.2rem;
-        border-radius: 16px;
-        color: white;
-        margin-bottom: 1.5rem;
-        box-shadow: 0 10px 25px -5px rgba(79, 70, 229, 0.25);
+    /* Header Bar */
+    .header-bar {
+        background-color: #FFFFFF;
+        border: 1px solid #E2E8F0;
+        border-radius: 12px;
+        padding: 16px 24px;
+        margin-bottom: 20px;
         display: flex;
+        justify-content: space-between;
         align-items: center;
-        gap: 22px;
     }
-    .hero-banner h1 {
-        color: #FFFFFF !important;
-        font-size: 2.3rem !important;
-        font-weight: 800 !important;
-        margin-bottom: 0.2rem !important;
-        margin-top: 0 !important;
+    .header-title {
+        color: #0F172A;
+        font-size: 1.5rem;
+        font-weight: 800;
+        margin: 0;
+        letter-spacing: -0.02em;
     }
-    .hero-banner p {
-        color: #E0E7FF !important;
-        font-size: 1.05rem !important;
-        margin: 0 !important;
+    .header-subtitle {
+        color: #64748B;
+        font-size: 0.9rem;
+        margin: 2px 0 0 0;
     }
 
-    /* Tab Button Styling */
-    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+    /* Item Cards */
+    div[data-testid="stVerticalBlock"] > div[data-testid="stBlock"] {
+        background-color: #FFFFFF;
+        border: 1px solid #E2E8F0;
+        border-radius: 12px;
+        padding: 14px;
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    div[data-testid="stVerticalBlock"] > div[data-testid="stBlock"]:hover {
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+    }
+
+    /* Status Badges */
+    .badge-office {
+        background-color: #EFF6FF;
+        color: #1E40AF;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-size: 0.78rem;
+        font-weight: 700;
+        display: inline-block;
+    }
+    .badge-classroom {
+        background-color: #F5F3FF;
+        color: #6D28D9;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-size: 0.78rem;
+        font-weight: 700;
+        display: inline-block;
+    }
+    .badge-match {
+        background-color: #ECFDF5;
+        color: #047857;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-size: 0.78rem;
+        font-weight: 700;
+        display: inline-block;
+    }
+    
+    /* Clean Tab Bar */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        border-bottom: 1px solid #E2E8F0;
+    }
     .stTabs [data-baseweb="tab"] {
-        border-radius: 10px !important;
-        padding: 10px 20px !important;
-        background-color: #FFFFFF !important;
-        border: 1px solid #E2E8F0 !important;
+        padding: 8px 16px !important;
         font-weight: 600 !important;
-        transition: all 0.2s ease !important;
+        color: #64748B !important;
+        border-radius: 8px 8px 0 0 !important;
     }
     .stTabs [aria-selected="true"] {
-        background: linear-gradient(135deg, #4F46E5 0%, #3B82F6 100%) !important;
-        color: white !important;
-        border: none !important;
-        box-shadow: 0 4px 12px rgba(79, 70, 229, 0.2) !important;
+        color: #1E40AF !important;
+        border-bottom: 2px solid #1E40AF !important;
+        background-color: transparent !important;
     }
-
-    /* Card Container Styling */
-    div[data-testid="stVerticalBlock"] > div[data-testid="stBlock"] {
-        border-radius: 12px;
-    }
-
-    /* Custom Status Badges & Tags */
-    .badge-active {
-        background-color: #FEF3C7;
-        color: #92400E;
-        padding: 4px 12px;
-        border-radius: 20px;
-        font-size: 0.82rem;
-        font-weight: 700;
-        display: inline-block;
-    }
-    .badge-returned {
-        background-color: #D1FAE5;
-        color: #065F46;
-        padding: 4px 12px;
-        border-radius: 20px;
-        font-size: 0.82rem;
-        font-weight: 700;
-        display: inline-block;
-    }
-    .slot-tag {
-        background-color: #4F46E5;
-        color: white;
-        padding: 4px 12px;
-        border-radius: 8px;
-        font-size: 0.88rem;
-        font-weight: 800;
-        display: inline-block;
-    }
-    .room-tag {
-        background-color: #8B5CF6;
-        color: white;
-        padding: 4px 12px;
-        border-radius: 8px;
-        font-size: 0.88rem;
-        font-weight: 800;
-        display: inline-block;
-    }
-    hr { border-color: #E2E8F0 !important; margin: 1.5rem 0 !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -139,7 +124,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(VECTOR_DIR, exist_ok=True)
 
 if not os.path.exists(MODEL_PATH):
-    with st.spinner("Downloading vision AI model..."):
+    with st.spinner("Preparing image matching system..."):
         urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
 
 # ---------------------------------------------------------
@@ -153,7 +138,9 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             slot_number INTEGER,
             holding_location TEXT DEFAULT 'Front Office',
+            holding_room_details TEXT,
             item_type TEXT NOT NULL,
+            title TEXT,
             location_found TEXT NOT NULL,
             date_found TEXT NOT NULL,
             notes TEXT,
@@ -172,6 +159,10 @@ def init_db():
         c.execute("ALTER TABLE items ADD COLUMN slot_number INTEGER")
     if "holding_location" not in columns:
         c.execute("ALTER TABLE items ADD COLUMN holding_location TEXT DEFAULT 'Front Office'")
+    if "holding_room_details" not in columns:
+        c.execute("ALTER TABLE items ADD COLUMN holding_room_details TEXT")
+    if "title" not in columns:
+        c.execute("ALTER TABLE items ADD COLUMN title TEXT")
     if "claimed_by" not in columns:
         c.execute("ALTER TABLE items ADD COLUMN claimed_by TEXT")
     if "returned_at" not in columns:
@@ -182,7 +173,6 @@ def init_db():
 init_db()
 
 def get_lowest_available_slot():
-    """Finds lowest positive slot number available for active items in the Front Office."""
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute("SELECT slot_number FROM items WHERE is_returned = 0 AND holding_location = 'Front Office' AND slot_number IS NOT NULL")
@@ -217,8 +207,7 @@ def extract_mediapipe_vector(image_file):
         result = embedder.embed(mp_image)
         embedding_values = result.embeddings[0].embedding
         return np.array(embedding_values, dtype=np.float32)
-    except Exception as e:
-        st.error(f"Error extracting image features: {e}")
+    except Exception:
         return None
 
 def cosine_similarity(vec1, vec2):
@@ -230,256 +219,315 @@ def cosine_similarity(vec1, vec2):
     return float(dot_product / (norm_v1 * norm_v2))
 
 # ---------------------------------------------------------
-# 4. SIDEBAR QR CODE & HERO HEADER WITH LOGO
+# 4. SESSION STATE INITIALIZATION
 # ---------------------------------------------------------
-st.sidebar.markdown("### 📱 Mobile Access")
-st.sidebar.image(
-    f"https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={APP_URL}",
-    caption="Scan QR code to access this app on your phone"
-)
+if "show_photo_search" not in st.session_state:
+    st.session_state.show_photo_search = False
+if "selected_item_id" not in st.session_state:
+    st.session_state.selected_item_id = None
+if "staff_auth" not in st.session_state:
+    st.session_state.staff_auth = False
 
-if logo_b64:
-    logo_html = f'<img src="data:image/png;base64,{logo_b64}" style="height: 95px; border-radius: 12px; background-color: #FFFFFF; padding: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); flex-shrink: 0;" />'
-else:
-    logo_html = '<span style="font-size: 3.5rem; line-height: 1;">🎒</span>'
+# ---------------------------------------------------------
+# 5. HEADER BAR & STAFF QUICK LINK
+# ---------------------------------------------------------
+head_col1, head_col2 = st.columns([4, 1])
 
-st.markdown(f"""
-    <div class="hero-banner">
-        {logo_html}
-        <div>
-            <h1>School Lost & Found Hub</h1>
-            <p>AI-powered visual search and smart inventory tracking for campus items</p>
+with head_col1:
+    st.markdown("""
+        <div style='display: flex; align-items: center; gap: 12px;'>
+            <span style='font-size: 2rem;'>🎒</span>
+            <div>
+                <h2 style='margin: 0; color: #0F172A; font-weight: 800; font-size: 1.5rem;'>LISA Lost & Found</h2>
+                <p style='margin: 0; color: #64748B; font-size: 0.88rem;'>Find it. Pick it up.</p>
+            </div>
         </div>
-    </div>
-""", unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
-tab1, tab2, tab3 = st.tabs([
-    "🔍 Search Lost Items", 
-    "📷 Report / Register Item", 
+with head_col2:
+    st.markdown("<div style='text-align: right; padding-top: 6px;'>", unsafe_allow_html=True)
+    if st.button("🔐 Staff Sign In" if not st.session_state.staff_auth else "✅ Staff Active", key="header_staff_btn"):
+        st.session_state.active_tab_override = "Staff Console"
+    st.markdown("</div>", unsafe_allow_html=True)
+
+st.markdown("<hr style='margin: 12px 0 20px 0; border-color: #E2E8F0;'>", unsafe_allow_html=True)
+
+# Main Navigation
+tab_gallery, tab_report, tab_staff = st.tabs([
+    "📦 Found Items Gallery", 
+    "➕ Report a Found Item", 
     "🔐 Staff Console"
 ])
 
 # =========================================================
-# TAB 1: SEARCH LOST ITEMS
+# TAB 1: FOUND ITEMS GALLERY (HOMEPAGE & CENTERPIECE)
 # =========================================================
-with tab1:
-    st.markdown("### 🔎 Find Your Missing Item")
-    st.caption("Choose how you want to locate your lost property below.")
+with tab_gallery:
     
-    search_mode = st.radio(
-        "Search Mode",
-        ["📷 Upload or Snap Photo (AI Visual Search)", "✏️ Type Description & Filter"],
-        horizontal=True,
+    # 1. Prominent Single Search Field
+    search_query = st.text_input(
+        "Search items", 
+        placeholder="🔍 Search by item, color, brand, or location (e.g. Blue Stanley, Gym, Jacket)",
         label_visibility="collapsed"
     )
 
-    st.markdown("---")
+    # 2. Controls & Filter Row
+    ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4 = st.columns([1.5, 1.2, 1.2, 0.8])
+    
+    with ctrl_col1:
+        if st.button("📷 Search with a Photo", use_container_width=True):
+            st.session_state.show_photo_search = not st.session_state.show_photo_search
 
-    # --- MODE 1: VISUAL AI SEARCH ---
-    if search_mode == "📷 Upload or Snap Photo (AI Visual Search)":
+    with ctrl_col2:
+        cat_filter = st.selectbox(
+            "Category", 
+            ["All Categories", "Water Bottle", "Jacket", "Lunch Box", "Backpack", "Other"],
+            label_visibility="collapsed"
+        )
+
+    with ctrl_col3:
+        loc_filter = st.selectbox(
+            "Pickup Location", 
+            ["All Locations", "Front Office", "Classroom Pickup"],
+            label_visibility="collapsed"
+        )
+
+    with ctrl_col4:
+        if st.button("Clear filters", use_container_width=True):
+            st.session_state.show_photo_search = False
+            st.rerun()
+
+    # 3. Secondary Photo Search Drawer (Expands when clicked)
+    photo_query_vec = None
+    if st.session_state.show_photo_search:
         with st.container(border=True):
-            st.markdown("##### 📸 AI Camera Match")
+            st.markdown("##### 📸 Photo Matching")
+            st.caption("Upload a photo or snap a picture of your lost item to find visually similar matches.")
             
-            photo_source = st.radio(
-                "Select Camera Input Method",
-                ["📁 Upload Image File", "📷 Snap Photo with Chromebook / Laptop Camera"],
-                horizontal=True
-            )
+            p_col1, p_col2 = st.columns(2)
+            with p_col1:
+                uploaded_img = st.file_uploader("Upload reference photo", type=["jpg", "png", "jpeg"])
+            with p_col2:
+                camera_img = st.camera_input("Or snap live photo")
+            
+            selected_photo = uploaded_img or camera_img
+            if selected_photo:
+                with st.spinner("Looking for similar items…"):
+                    photo_query_vec = extract_mediapipe_vector(selected_photo)
 
-            uploaded_query = None
-            if photo_source == "📁 Upload Image File":
-                uploaded_query = st.file_uploader(
-                    "Upload a photo of your lost item (or a similar picture from the web)", 
-                    type=["jpg", "jpeg", "png"]
-                )
-            else:
-                uploaded_query = st.camera_input("Take a picture of your lost item using your device camera")
+    st.markdown("<br>", unsafe_allow_html=True)
 
-            if uploaded_query is not None:
-                st.image(uploaded_query, caption="Selected Search Photo", width=220)
-                
-                with st.spinner("Extracting AI features & calculating vector similarity..."):
-                    query_vec = extract_mediapipe_vector(uploaded_query)
-                
-                if query_vec is not None:
-                    conn = sqlite3.connect(DB_FILE)
-                    c = conn.cursor()
-                    c.execute("SELECT id, slot_number, holding_location, item_type, location_found, date_found, notes, image_path, vector_path FROM items WHERE is_returned = 0")
-                    active_items = c.fetchall()
-                    conn.close()
-
-                    SIMILARITY_THRESHOLD = 0.15
-                    matches = []
-
-                    for item in active_items:
-                        item_id, slot_num, holding_loc, item_type, loc, date_found, notes, img_path, vec_path = item
-                        if vec_path and os.path.exists(vec_path):
-                            saved_vec = np.load(vec_path)
-                            sim_score = cosine_similarity(query_vec, saved_vec)
-                            
-                            if sim_score >= SIMILARITY_THRESHOLD:
-                                matches.append((sim_score, item))
-
-                    matches.sort(key=lambda x: x[0], reverse=True)
-
-                    st.markdown("#### 🎯 Best Visual Matches")
-                    if not matches:
-                        st.info("No matching items found. Try uploading a clearer photo or using Keyword Search.")
-                    else:
-                        cols = st.columns(3)
-                        for idx, (score, item) in enumerate(matches[:6]):
-                            item_id, slot_num, holding_loc, item_type, loc, date_found, notes, img_path, vec_path = item
-                            with cols[idx % 3]:
-                                with st.container(border=True):
-                                    if os.path.exists(img_path):
-                                        st.image(img_path, use_container_width=True)
-                                    
-                                    if holding_loc == "Front Office" and slot_num:
-                                        tag_html = f"<span class='slot-tag'>Office Slot #{slot_num}</span>"
-                                    else:
-                                        tag_html = f"<span class='room-tag'>🏫 {loc}</span>"
-
-                                    st.markdown(f"#### {item_type} {tag_html}", unsafe_allow_html=True)
-                                    conf_pct = max(0.0, min(1.0, score))
-                                    st.progress(float(conf_pct))
-                                    st.caption(f"**Match Score:** {score*100:.1f}%")
-                                    
-                                    st.markdown(f"📍 **Location / Room:** {loc}")
-                                    st.markdown(f"📅 **Date Found:** {date_found}")
-                                    if notes:
-                                        st.markdown(f"📝 **Notes:** {notes}")
-
-    # --- MODE 2: TEXT & FILTER SEARCH ---
-    else:
-        with st.container(border=True):
-            st.markdown("##### 🔍 Keyword & Category Search")
-            col1, col2 = st.columns(2)
-            with col1:
-                category_filter = st.selectbox(
-                    "Category Filter", 
-                    ["All Categories", "Water Bottle", "Jacket", "Lunch Box", "Backpack", "Other"]
-                )
-            with col2:
-                search_text = st.text_input(
-                    "Keyword Search", 
-                    placeholder="e.g., navy blue, hydroflask, gym, 211"
-                )
-
+    # 4. Detail View Overlay (Finish Student's Journey)
+    if st.session_state.selected_item_id is not None:
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
-        c.execute("SELECT id, slot_number, holding_location, item_type, location_found, date_found, notes, image_path FROM items WHERE is_returned = 0")
-        all_active_items = c.fetchall()
+        c.execute("SELECT id, slot_number, holding_location, holding_room_details, item_type, title, location_found, date_found, notes, image_path FROM items WHERE id = ?", (st.session_state.selected_item_id,))
+        det_item = c.fetchone()
         conn.close()
 
-        keywords = search_text.lower().strip().split()
-        filtered_results = []
+        if det_item:
+            d_id, d_slot, d_holding, d_room_det, d_type, d_title, d_loc, d_date, d_notes, d_img = det_item
+            display_title = d_title if d_title else f"{d_type}"
 
-        for item in all_active_items:
-            item_id, slot_num, holding_loc, item_type, loc, date_found, notes, img_path = item
-            if category_filter != "All Categories" and item_type != category_filter:
+            with st.container(border=True):
+                st.markdown("### 📋 Item Details & Pickup Instructions")
+                
+                det_col1, det_col2 = st.columns([1, 1.5])
+                with det_col1:
+                    if os.path.exists(d_img):
+                        st.image(d_img, use_container_width=True)
+                
+                with det_col2:
+                    st.markdown(f"## {display_title}")
+                    
+                    if d_holding == "Front Office":
+                        pickup_label = f"🏢 Front Office (Slot #{d_slot})" if d_slot else "🏢 Front Office"
+                        instruction_text = "Visit the **Front Office** during passing period, lunch, or after dismissal and describe your item to staff."
+                    else:
+                        room_text = d_room_det or d_loc
+                        pickup_label = f"🏫 Classroom Pickup ({room_text})"
+                        instruction_text = f"Visit **{room_text}** before school or after dismissal to collect your item from the teacher."
+
+                    st.markdown(f"📍 **Found at:** {d_loc} on {d_date}")
+                    st.markdown(f"📦 **Pick up at:** `{pickup_label}`")
+                    if d_notes:
+                        st.markdown(f"📝 **Identifying Notes:** {d_notes}")
+                    
+                    st.info(f"💡 **How to collect:**\n\n{instruction_text}")
+
+                    if st.button("Close Details", use_container_width=False):
+                        st.session_state.selected_item_id = None
+                        st.rerun()
+
+            st.markdown("<hr>", unsafe_allow_html=True)
+
+    # 5. Fetch Active Items & Apply Search Filters
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT id, slot_number, holding_location, holding_room_details, item_type, title, location_found, date_found, notes, image_path, vector_path FROM items WHERE is_returned = 0 ORDER BY id DESC")
+    active_items = c.fetchall()
+    conn.close()
+
+    display_list = []
+
+    # Filter logic
+    for item in active_items:
+        i_id, i_slot, i_holding, i_room_det, i_type, i_title, i_loc, i_date, i_notes, i_img, i_vec_path = item
+        
+        # Category filter
+        if cat_filter != "All Categories" and i_type != cat_filter:
+            continue
+
+        # Location filter
+        if loc_filter == "Front Office" and i_holding != "Front Office":
+            continue
+        if loc_filter == "Classroom Pickup" and i_holding == "Front Office":
+            continue
+
+        # Text search query
+        if search_query.strip():
+            kw = search_query.lower().strip()
+            combined_info = f"{i_type} {i_title or ''} {i_loc} {i_notes or ''} {i_holding}".lower()
+            if kw not in combined_info:
                 continue
 
-            combined_text = f"{item_type} {loc} {notes or ''} {holding_loc}".lower()
-            if all(kw in combined_text for kw in keywords):
-                filtered_results.append(item)
+        # Photo similarity matching
+        sim_score = 0.0
+        if photo_query_vec is not None and i_vec_path and os.path.exists(i_vec_path):
+            saved_vec = np.load(i_vec_path)
+            sim_score = cosine_similarity(photo_query_vec, saved_vec)
+            if sim_score < 0.15:  # Similarity threshold
+                continue
 
-        st.markdown(f"#### 📦 Available Items ({len(filtered_results)} found)")
-        
-        if not filtered_results:
-            st.info("No active inventory items match your criteria.")
-        else:
-            cols = st.columns(3)
-            for idx, item in enumerate(filtered_results):
-                item_id, slot_num, holding_loc, item_type, loc, date_found, notes, img_path = item
-                with cols[idx % 3]:
-                    with st.container(border=True):
-                        if os.path.exists(img_path):
-                            st.image(img_path, use_container_width=True)
-                        
-                        if holding_loc == "Front Office" and slot_num:
-                            tag_html = f"<span class='slot-tag'>Office Slot #{slot_num}</span>"
-                        else:
-                            tag_html = f"<span class='room-tag'>🏫 {loc}</span>"
+        display_list.append((sim_score, item))
 
-                        st.markdown(f"#### {item_type} {tag_html}", unsafe_allow_html=True)
-                        st.markdown(f"📍 **Location / Room:** {loc}")
-                        st.markdown(f"📅 **Date Found:** {date_found}")
-                        if notes:
-                            st.markdown(f"📝 **Details:** {notes}")
+    # Sort by photo score if photo vector is active
+    if photo_query_vec is not None:
+        display_list.sort(key=lambda x: x[0], reverse=True)
 
-# =========================================================
-# TAB 2: REPORT / REGISTER ITEM
-# =========================================================
-with tab2:
-    st.markdown("### 📥 Register a Found Item")
-    
-    holding_choice = st.radio(
-        "Current Item Storage Location",
-        ["🏢 Sent to Front Office (Assign Storage Tag)", "🏫 Kept in Classroom (Student picks up from room)"],
-        horizontal=True
-    )
+    # 6. Render Item Cards Centerpiece
+    st.markdown(f"#### Found Items ({len(display_list)})")
 
-    if "Front Office" in holding_choice:
-        next_slot = get_lowest_available_slot()
-        st.info(f"🏷️ **Auto-Assigned Office Tag:** This item will be assigned to **Bin / Hook Slot #{next_slot}** in the front office.")
+    if not display_list:
+        st.info("No found items match your search. Try clearing filters or searching for general keywords.")
     else:
-        st.success("📍 **Classroom Pickup:** No office slot tag required. Enter your room number below (e.g., Room 211) so students can pick it up directly.")
+        cols = st.columns(3)
+        for idx, (score, item) in enumerate(display_list):
+            i_id, i_slot, i_holding, i_room_det, i_type, i_title, i_loc, i_date, i_notes, i_img, i_vec_path = item
+            card_title = i_title if i_title else f"{i_type}"
+            
+            with cols[idx % 3]:
+                with st.container(border=True):
+                    # Consistent image aspect ratio preview
+                    if os.path.exists(i_img):
+                        st.image(i_img, use_container_width=True)
+                    
+                    # Pickup location badge
+                    if i_holding == "Front Office" and i_slot:
+                        badge_html = f"<span class='badge-office'>Pick up: Front Office (Slot #{i_slot})</span>"
+                    else:
+                        room_disp = i_room_det if i_room_det else i_loc
+                        badge_html = f"<span class='badge-classroom'>Pick up: {room_disp}</span>"
+
+                    st.markdown(f"**{card_title}**")
+                    st.caption(f"Found {i_date} · {i_loc}")
+                    st.markdown(badge_html, unsafe_allow_html=True)
+
+                    if photo_query_vec is not None and score > 0:
+                        st.markdown(f"<span class='badge-match'>Visually similar ({int(score*100)}%)</span>", unsafe_allow_html=True)
+
+                    st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
+                    if st.button("View details", key=f"view_btn_{i_id}", use_container_width=True):
+                        st.session_state.selected_item_id = i_id
+                        st.rerun()
+
+# =========================================================
+# TAB 2: REPORT A FOUND ITEM (SIMPLIFIED & LOGICAL)
+# =========================================================
+with tab_report:
+    st.markdown("### Report a Found Item")
+    st.caption("Help a student reunite with their lost property by logging what you found below.")
 
     with st.container(border=True):
-        col_a, col_b = st.columns(2)
-        with col_a:
-            item_type = st.selectbox("Item Category", ["Water Bottle", "Jacket", "Lunch Box", "Backpack", "Other"])
-            location_found = st.text_input("Location / Room Found", placeholder="e.g., Room 211, Gymnasium, Library")
-        with col_b:
-            date_found = st.date_input("Date Found").strftime("%Y-%m-%d")
-            notes = st.text_area("Description & Unique Identifiers", placeholder="e.g., Pink Stanley tumbler with straw")
+        # Step 1: Add a photo
+        st.markdown("##### 1. Add a Photo")
+        rep_photo_source = st.radio("Photo Input", ["📁 Upload Image File", "📷 Take Photo with Camera"], horizontal=True, label_visibility="collapsed")
+        
+        item_photo = None
+        if rep_photo_source == "📁 Upload Image File":
+            item_photo = st.file_uploader("Upload clear photo of the item", type=["jpg", "jpeg", "png"])
+        else:
+            item_photo = st.camera_input("Snap picture of found item")
 
-        st.markdown("##### 📸 Photo Capture / Upload Option")
-        photo_reg_source = st.radio(
-            "Photo Input Method for Registration",
-            ["📁 Upload Image File", "📷 Snap Live Photo with Camera"],
+        st.markdown("<hr style='margin: 15px 0;'>", unsafe_allow_html=True)
+
+        # Step 2: Describe the item
+        st.markdown("##### 2. Describe the Item")
+        col_r1, col_r2 = st.columns(2)
+        with col_r1:
+            item_title = st.text_input("Short Item Title", placeholder="e.g. Blue Stanley Water Bottle, Black North Face Jacket")
+            item_category = st.selectbox("Category", ["Water Bottle", "Jacket", "Lunch Box", "Backpack", "Other"])
+        with col_r2:
+            item_notes = st.text_area("Identifying Details / Notes", placeholder="e.g. Has a pink sticker on the bottom, slightly scratched lid")
+
+        st.markdown("<hr style='margin: 15px 0;'>", unsafe_allow_html=True)
+
+        # Step 3: Where and when it was found
+        st.markdown("##### 3. Enter Where and When It Was Found")
+        col_r3, col_r4 = st.columns(2)
+        with col_r3:
+            location_found = st.text_input("Location Found", placeholder="e.g. Gym, Library, Hallway by Room 104")
+        with col_r4:
+            date_found = st.date_input("Date Found").strftime("%Y-%m-%d")
+
+        st.markdown("<hr style='margin: 15px 0;'>", unsafe_allow_html=True)
+
+        # Step 4: Where it is being held (Separated from Location Found)
+        st.markdown("##### 4. Enter Where It Is Being Held")
+        holding_choice = st.radio(
+            "Holding Location",
+            ["🏢 Front Office (Assigns automatic bin/slot tag)", "🏫 Kept in Classroom / Specific Room"],
             horizontal=True
         )
 
-        item_image = None
-        if photo_reg_source == "📁 Upload Image File":
-            item_image = st.file_uploader("Upload Item Photo (Used for AI feature matching)", type=["jpg", "jpeg", "png"])
-        else:
-            item_image = st.camera_input("Take a photo of the found item")
+        room_details = ""
+        if "Classroom" in holding_choice:
+            room_details = st.text_input("Classroom / Room Number for Pickup", placeholder="e.g. Room 211")
 
         st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("🚀 Submit Item to Inventory", use_container_width=True):
-            if not item_image:
-                st.error("Please capture or upload a photo of the item.")
+
+        # Step 5: Save found item
+        if st.button("Save Found Item", use_container_width=True):
+            if not item_photo:
+                st.error("Please upload or snap a photo of the item first.")
             elif not location_found.strip():
-                st.error("Please specify the room or location where the item is kept.")
+                st.error("Please enter where the item was found.")
+            elif "Classroom" in holding_choice and not room_details.strip():
+                st.error("Please enter the room number where the item is being held.")
             else:
                 if "Front Office" in holding_choice:
                     assigned_slot = get_lowest_available_slot()
                     holding_loc_val = "Front Office"
                 else:
                     assigned_slot = None
-                    holding_loc_val = "Classroom"
+                    holding_loc_val = "Classroom Pickup"
 
-                file_ext = ".jpg"
-                if hasattr(item_image, "name") and item_image.name:
-                    file_ext = os.path.splitext(item_image.name)[1] or ".jpg"
-                
                 conn = sqlite3.connect(DB_FILE)
                 c = conn.cursor()
-                c.execute(
-                    "INSERT INTO items (slot_number, holding_location, item_type, location_found, date_found, notes, image_path) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (assigned_slot, holding_loc_val, item_type, location_found, date_found, notes, "")
-                )
+                c.execute("""
+                    INSERT INTO items (slot_number, holding_location, holding_room_details, item_type, title, location_found, date_found, notes, image_path)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (assigned_slot, holding_loc_val, room_details.strip(), item_category, item_title.strip(), location_found.strip(), date_found, item_notes.strip(), ""))
                 new_id = c.lastrowid
-                
-                img_path = os.path.join(UPLOAD_DIR, f"item_{new_id}{file_ext}")
-                with open(img_path, "wb") as f:
-                    f.write(item_image.getbuffer())
 
+                # Save image file
+                img_path = os.path.join(UPLOAD_DIR, f"item_{new_id}.jpg")
+                with open(img_path, "wb") as f:
+                    f.write(item_photo.getbuffer())
+
+                # Save vector embedding for AI search
                 vec_path = os.path.join(VECTOR_DIR, f"vector_{new_id}.npy")
-                vector = extract_mediapipe_vector(item_image)
-                
+                vector = extract_mediapipe_vector(item_photo)
                 if vector is not None:
                     np.save(vec_path, vector)
                 else:
@@ -489,159 +537,66 @@ with tab2:
                 conn.commit()
                 conn.close()
 
-                st.balloons()
-                if assigned_slot:
-                    st.success(f"Item successfully registered! Tag with **Slot #{assigned_slot}** for office storage.")
-                else:
-                    st.success(f"Item successfully registered! Saved for pickup in **{location_found}**.")
+                st.success("Item saved! Students can now view and search for it in the gallery.")
 
 # =========================================================
-# TAB 3: STAFF & TEACHER CONSOLE
+# TAB 3: STAFF CONSOLE
 # =========================================================
-with tab3:
-    st.markdown("### 🔐 Staff & Teacher Console")
-    st.caption("Teachers and office staff can filter items, mark them as returned, and check pickup history.")
-    
-    passcode = st.text_input("Enter Staff / Teacher Passcode", type="password")
-    
-    if passcode == "1234":
-        st.success("Authenticated as Staff / Teacher")
-        
-        # Room / Location Filter for Active Inventory
-        col_f1, col_f2 = st.columns([1, 2])
-        with col_f1:
-            view_filter = st.selectbox(
-                "Show Active Items From",
-                ["All Unclaimed Items", "🏢 Front Office Only", "🏫 Classroom Items Only"]
-            )
-        with col_f2:
-            room_search = st.text_input("Filter Active Items by Room / Keyword", placeholder="e.g., 211, Stanley, Jacket")
+with tab_staff:
+    st.markdown("### 🔐 Staff Console")
+    st.caption("Authorized staff and teachers can manage unclaimed items, record returns, and view claim history.")
+
+    staff_code = st.text_input("Enter Staff Passcode", type="password")
+    if staff_code == "1234":
+        st.session_state.staff_auth = True
+        st.success("Authenticated as Staff")
 
         conn = sqlite3.connect(DB_FILE)
         c = conn.cursor()
-        c.execute("SELECT id, slot_number, holding_location, item_type, location_found, date_found, notes, image_path FROM items WHERE is_returned = 0 ORDER BY holding_location ASC, slot_number ASC")
-        active_records = c.fetchall()
+        c.execute("SELECT id, slot_number, holding_location, holding_room_details, item_type, title, location_found, date_found, notes, image_path FROM items WHERE is_returned = 0 ORDER BY id DESC")
+        staff_active = c.fetchall()
 
-        c.execute("SELECT id, slot_number, holding_location, item_type, location_found, date_found, notes, image_path, claimed_by, returned_at FROM items WHERE is_returned = 1 ORDER BY returned_at DESC")
-        returned_records = c.fetchall()
+        c.execute("SELECT id, slot_number, holding_location, holding_room_details, item_type, title, location_found, date_found, notes, image_path, claimed_by, returned_at FROM items WHERE is_returned = 1 ORDER BY returned_at DESC")
+        staff_returned = c.fetchall()
         conn.close()
 
-        # Apply Staff Console Filters
-        filtered_active = []
-        for rec in active_records:
-            rec_id, rec_slot, rec_holding, rec_type, rec_loc, rec_date, rec_notes, rec_img = rec
-            
-            if view_filter == "🏢 Front Office Only" and rec_holding != "Front Office":
-                continue
-            if view_filter == "🏫 Classroom Items Only" and rec_holding == "Front Office":
-                continue
-            
-            if room_search.strip():
-                kw = room_search.lower().strip()
-                combined = f"{rec_type} {rec_loc} {rec_notes or ''}".lower()
-                if kw not in combined:
-                    continue
-            
-            filtered_active.append(rec)
-
-        m_col1, m_col2, m_col3 = st.columns(3)
-        m_col1.metric("Total Items Logged", len(active_records) + len(returned_records))
-        m_col2.metric("Active Unclaimed", len(active_records))
-        m_col3.metric("Returned to Owner", len(returned_records))
-
-        st.markdown("---")
-        st.markdown(f"#### 🏷️ Active Unclaimed Items ({len(filtered_active)} showing)")
+        st.markdown(f"#### Unclaimed Items ({len(staff_active)})")
         
-        if not filtered_active:
-            st.info("No unclaimed items match your filter criteria.")
-        else:
-            for record in filtered_active:
-                rec_id, rec_slot, rec_holding, rec_type, rec_loc, rec_date, rec_notes, rec_img = record
-                
-                with st.container(border=True):
-                    col_img, col_info, col_action = st.columns([1.2, 2.5, 1.8])
-                    
-                    with col_img:
-                        if os.path.exists(rec_img):
-                            st.image(rec_img, use_container_width=True)
-                    
-                    with col_info:
-                        if rec_holding == "Front Office" and rec_slot:
-                            tag_html = f"<span class='slot-tag'>Office Slot #{rec_slot}</span>"
-                        else:
-                            tag_html = f"<span class='room-tag'>🏫 {rec_loc}</span>"
+        for item in staff_active:
+            s_id, s_slot, s_holding, s_room_det, s_type, s_title, s_loc, s_date, s_notes, s_img = item
+            s_display_title = s_title if s_title else s_type
 
-                        st.markdown(f"#### {rec_type} {tag_html}", unsafe_allow_html=True)
-                        st.markdown(f"📍 **Location / Room:** {rec_loc}")
-                        st.markdown(f"📅 **Date Found:** {rec_date}")
-                        if rec_notes:
-                            st.caption(f"Notes: {rec_notes}")
-                    
-                    with col_action:
-                        claimed_input = st.text_input(
-                            "Claimed By (Optional Name / ID)", 
-                            key=f"claim_input_{rec_id}", 
-                            placeholder="e.g. Alex Smith (or leave blank)"
-                        )
-                        btn_text = f"Mark Returned (Frees Slot #{rec_slot})" if rec_slot else "Mark Returned"
-                        
-                        if st.button(btn_text, key=f"ret_{rec_id}", use_container_width=True):
-                            conn = sqlite3.connect(DB_FILE)
-                            c = conn.cursor()
-                            c.execute("""
-                                UPDATE items 
-                                SET is_returned = 1, 
-                                    claimed_by = ?, 
-                                    returned_at = CURRENT_TIMESTAMP 
-                                WHERE id = ?
-                            """, (claimed_input.strip() if claimed_input.strip() else "Unspecified Student", rec_id))
-                            conn.commit()
-                            conn.close()
-                            st.success(f"Item #{rec_id} marked as returned!")
-                            st.rerun()
+            with st.container(border=True):
+                sc1, sc2, sc3 = st.columns([1, 2.5, 1.5])
+                with sc1:
+                    if os.path.exists(s_img):
+                        st.image(s_img, use_container_width=True)
+                with sc2:
+                    st.markdown(f"**{s_display_title}**")
+                    if s_holding == "Front Office" and s_slot:
+                        st.markdown(f"<span class='badge-office'>Office Slot #{s_slot}</span>", unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"<span class='badge-classroom'>Room: {s_room_det}</span>", unsafe_allow_html=True)
+                    st.caption(f"Found at {s_loc} on {s_date}")
+                    if s_notes:
+                        st.caption(f"Notes: {s_notes}")
+                with sc3:
+                    claimer = st.text_input("Claimed by Student Name/ID", key=f"claimer_{s_id}")
+                    if st.button("Mark Returned", key=f"mark_ret_{s_id}", use_container_width=True):
+                        conn = sqlite3.connect(DB_FILE)
+                        c = conn.cursor()
+                        c.execute("UPDATE items SET is_returned = 1, claimed_by = ?, returned_at = CURRENT_TIMESTAMP WHERE id = ?", (claimer.strip() if claimer.strip() else "Verified Student", s_id))
+                        conn.commit()
+                        conn.close()
+                        st.success(f"Item #{s_id} marked as returned!")
+                        st.rerun()
 
-        # =========================================================
-        # RETURNED ITEMS ARCHIVE (WITH SEARCH & VISUAL PREVIEW)
-        # =========================================================
-        if returned_records:
+        if staff_returned:
             st.markdown("---")
-            st.markdown("#### ✅ Archive / Returned Items History")
-            st.caption("Search past returned items to verify student pickups or correct mix-ups.")
+            st.markdown(f"#### Returned History Archive ({len(staff_returned)})")
+            for r_item in staff_returned:
+                r_id, r_slot, r_holding, r_room_det, r_type, r_title, r_loc, r_date, r_notes, r_img, r_claimed, r_ret_at = r_item
+                st.caption(f"✅ **{r_title or r_type}** — Claimed by `{r_claimed}` on {r_ret_at}")
 
-            archive_search = st.text_input("Search Returned History (by student name, item, or room)", placeholder="e.g., Alex, Stanley, Room 211")
-            
-            filtered_returned = []
-            for record in returned_records:
-                rec_id, rec_slot, rec_holding, rec_type, rec_loc, rec_date, rec_notes, rec_img, rec_claimed, rec_ret_at = record
-                
-                if archive_search.strip():
-                    kw = archive_search.lower().strip()
-                    combined = f"{rec_type} {rec_loc} {rec_notes or ''} {rec_claimed or ''}".lower()
-                    if kw not in combined:
-                        continue
-                filtered_returned.append(record)
-
-            if not filtered_returned:
-                st.info("No returned items match your archive search.")
-            else:
-                for record in filtered_returned:
-                    rec_id, rec_slot, rec_holding, rec_type, rec_loc, rec_date, rec_notes, rec_img, rec_claimed, rec_ret_at = record
-                    
-                    with st.container(border=True):
-                        col_ret_img, col_ret_info = st.columns([1.2, 4.3])
-                        
-                        with col_ret_img:
-                            if os.path.exists(rec_img):
-                                st.image(rec_img, use_container_width=True)
-                        
-                        with col_ret_info:
-                            loc_info = f"Office Slot #{rec_slot}" if rec_slot else f"Classroom ({rec_loc})"
-                            badge_html = '<span class="badge-returned">✅ Returned to Owner</span>'
-                            st.markdown(f"#### Item #{rec_id}: {rec_type} {badge_html}", unsafe_allow_html=True)
-                            st.markdown(f"👤 **Claimed By:** `{rec_claimed if rec_claimed else 'Unspecified Student'}`")
-                            st.markdown(f"📍 **Origin Location:** {loc_info}")
-                            st.markdown(f"📅 **Found Date:** {rec_date} | **Returned Date:** {rec_ret_at}")
-                            if rec_notes:
-                                st.caption(f"Notes: {rec_notes}")
-    elif passcode:
+    elif staff_code:
         st.error("Incorrect passcode.")
