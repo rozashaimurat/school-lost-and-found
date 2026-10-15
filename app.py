@@ -93,11 +93,11 @@ html, body, .stApp, .stApp p, .stApp label, .stApp input, .stApp textarea,
 .lf-meta { font-size: .9rem; color: #475569; margin: 0 0 1rem; }
 
 /* Brand block */
-.lf-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 1.6rem; }
-.lf-brand img { width: 44px; height: 44px; object-fit: contain; border-radius: 10px; background: #fff; border: 1px solid #E2E8F0; }
-.lf-brand .crest { width: 44px; height: 44px; border-radius: 10px; background: #B91C1C; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 13px; }
-.lf-brand small { display: block; font-size: 12px; font-weight: 600; color: #475569; letter-spacing: .04em; }
-.lf-brand strong { display: block; font-size: 18px; font-weight: 800; color: #0F172A; }
+.lf-brand { display: flex; align-items: center; gap: 16px; margin-bottom: 2rem; }
+.lf-brand img { width: 68px; height: 68px; object-fit: contain; border-radius: 14px; background: #fff; border: 1px solid #E2E8F0; }
+.lf-brand .crest { width: 68px; height: 68px; border-radius: 14px; background: #B91C1C; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 18px; }
+.lf-brand small { display: block; font-size: 15px; font-weight: 600; color: #475569; letter-spacing: .02em; }
+.lf-brand strong { display: block; font-size: 28px; font-weight: 800; color: #0F172A; line-height: 1.15; }
 
 /* Item cards */
 .lf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 20px; }
@@ -383,7 +383,7 @@ def empty_state(title, text):
 
 
 @st.cache_data(show_spinner=False)
-def crest_data_uri(path, mtime, size=96):
+def crest_data_uri(path, mtime, size=160):
     """Trim the empty margin around a wide logo and center it in a square."""
     img = Image.open(path).convert("RGBA")
     bg = Image.new("RGBA", img.size, img.getpixel((0, 0)))
