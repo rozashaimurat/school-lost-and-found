@@ -33,12 +33,16 @@ MODEL_URL = (
 )
 APP_URL = "https://school-lost-and-found-exey2emwyf5hcxwktbyskv.streamlit.app/"
 
-CATEGORIES = ["Water bottle", "Jacket", "Lunch box", "Backpack", "Uniform", "Other"]
+CATEGORIES = ["Water bottle", "Jacket", "Lunch box", "Backpack", "Other"]
 
-# Photo-match labels. Tune these after testing with real photos:
-# print a few scores, then set the cut-offs where matches start looking wrong.
-STRONG_MATCH = 0.55
-POSSIBLE_MATCH = 0.30
+# Photo-match labels. Tune these after testing with real photos.
+# Turn on SHOW_SCORES to see each card's score while you test.
+STRONG_MATCH = 0.45
+POSSIBLE_MATCH = 0.20
+# If nothing reaches POSSIBLE_MATCH, still show this many closest items
+# (labeled "Worth a look") so a real match is never hidden completely.
+FALLBACK_RESULTS = 3
+SHOW_SCORES = False
 
 DONATE_AFTER_DAYS = 30
 
@@ -116,6 +120,7 @@ html, body, .stApp, .stApp p, .stApp label, .stApp input, .stApp textarea,
 .lf-match { align-self: flex-start; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 800; }
 .lf-match.strong { background: #4338CA; color: #fff; }
 .lf-match.possible { background: #FFF7ED; color: #9A3412; border: 1px solid #FDBA74; }
+.lf-match.low { background: #F1F5F9; color: #334155; border: 1px solid #CBD5E1; }
 
 /* How-to-pick-up steps */
 .lf-steps { margin-top: 2rem; background: #fff; border: 1px solid #E2E8F0; border-radius: 16px; padding: 24px; display: flex; flex-wrap: wrap; gap: 24px; }
@@ -151,6 +156,7 @@ html, body, .stApp, .stApp p, .stApp label, .stApp input, .stApp textarea,
 
 /* Empty state */
 .lf-empty { background: #fff; border: 1px dashed #CBD5E1; border-radius: 16px; padding: 36px 24px; text-align: center; color: #334155; }
+.lf-empty { margin-top: 1.4rem; }
 .lf-empty b { display: block; font-size: 1.1rem; color: #0F172A; margin-bottom: 4px; }
 
 /* Full-width primary submit buttons */
@@ -272,6 +278,7 @@ def get_embedder():
 
 
 def photo_vector(image_bytes):
+    """Whole-photo vector saved with each item (kept for older-data compatibility)."""
     try:
         img = ImageOps.exif_transpose(Image.open(io.BytesIO(image_bytes))).convert("RGB")
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=np.array(img))
@@ -280,6 +287,58 @@ def photo_vector(image_bytes):
     except Exception as e:
         st.error(f"That photo couldn't be read. Try a JPG or PNG. ({e})")
         return None
+
+
+def _embed(img):
+    data = np.ascontiguousarray(np.array(img.convert("RGB")))
+    result = get_embedder().embed(mp.Image(image_format=mp.ImageFormat.SRGB, data=data))
+    return np.array(result.embeddings[0].embedding, dtype=np.float32)
+
+
+def _center_crop(img, keep):
+    w, h = img.size
+    cw, ch = int(w * keep), int(h * keep)
+    left, top = (w - cw) // 2, (h - ch) // 2
+    return img.crop((left, top, left + cw, top + ch))
+
+
+def image_vectors(img):
+    """Vectors for the whole photo plus tighter center crops.
+    The crops cut away background (brick walls, desks, laps) so the same
+    item photographed in two different places still matches."""
+    img = ImageOps.exif_transpose(img).convert("RGB")
+    return [_embed(img), _embed(_center_crop(img, 0.7)), _embed(_center_crop(img, 0.5))]
+
+
+def query_vectors(image_bytes):
+    try:
+        return image_vectors(Image.open(io.BytesIO(image_bytes)))
+    except Exception as e:
+        st.error(f"That photo couldn't be read. Try a JPG or PNG. ({e})")
+        return None
+
+
+@st.cache_data(show_spinner=False)
+def stored_vectors(image_path, mtime):
+    """Same multi-crop vectors for a saved item photo (cached, so it runs once per item)."""
+    return image_vectors(Image.open(image_path))
+
+
+def item_vectors(item):
+    path = item.get("image_path")
+    if path and os.path.exists(path):
+        try:
+            return stored_vectors(path, os.path.getmtime(path))
+        except Exception:
+            pass
+    vp = item.get("vector_path")  # fallback: older items with only a saved vector
+    if vp and os.path.exists(vp):
+        return [np.load(vp)]
+    return []
+
+
+def best_score(qvecs, ivecs):
+    return max((cosine(q, v) for q in qvecs for v in ivecs), default=0.0)
 
 
 def cosine(a, b):
@@ -339,7 +398,7 @@ def item_title(item):
     return notes if notes else item["item_type"]
 
 
-def card_html(item, match=None):
+def card_html(item, match=None, score=None):
     e = html.escape
     uri = thumb(item["image_path"])
     photo = (
@@ -354,6 +413,10 @@ def card_html(item, match=None):
         badge, best = '<span class="lf-match strong">Strong match</span>', " best"
     elif match == "possible":
         badge = '<span class="lf-match possible">Possible match</span>'
+    elif match == "low":
+        badge = '<span class="lf-match low">Worth a look</span>'
+    if score is not None:
+        badge += f'<span class="lf-match low">score {score:.2f}</span>'
     return f"""
 <article class="lf-card{best}">
   {photo}
@@ -367,8 +430,11 @@ def card_html(item, match=None):
 </article>"""
 
 
-def show_grid(items, matches=None):
-    cards = [card_html(it, (matches or {}).get(it["id"])) for it in items]
+def show_grid(items, matches=None, scores=None):
+    cards = [
+        card_html(it, (matches or {}).get(it["id"]), (scores or {}).get(it["id"]))
+        for it in items
+    ]
     block = f'<div class="lf-grid">{"".join(cards)}</div>'
     # Remove line breaks + indentation: Markdown treats indented lines as code blocks.
     block = re.sub(r"\n\s*", "", block)
@@ -477,55 +543,66 @@ def find_page():
             st.rerun()
 
         with st.spinner("Comparing your photo with turned-in items…"):
-            qvec = photo_vector(photo.getvalue())
-        if qvec is None:
-            return
+            qvecs = query_vectors(photo.getvalue())
+            if qvecs is None:
+                return
+            ranked = []
+            for it in items:
+                ivecs = item_vectors(it)
+                if ivecs:
+                    ranked.append((best_score(qvecs, ivecs), it))
+        ranked.sort(key=lambda x: x[0], reverse=True)
 
-        scored = []
-        for it in items:
-            vp = it.get("vector_path")
-            if vp and os.path.exists(vp):
-                score = cosine(qvec, np.load(vp))
-                if score >= POSSIBLE_MATCH:
-                    scored.append((score, it))
-        scored.sort(key=lambda x: x[0], reverse=True)
-        scored = scored[:6]
-
-        if not scored:
-            empty_state(
-                "No close matches yet.",
-                " Try a clearer photo on a plain background, or search by description above.",
-            )
+        good = [(s, it) for s, it in ranked if s >= POSSIBLE_MATCH][:6]
+        if good:
+            shown = good
+            label = lambda s: "strong" if s >= STRONG_MATCH else "possible"
+            n = len(shown)
+            meta = f'{n} item{"s" if n != 1 else ""} look similar'
         else:
-            labels = {it["id"]: ("strong" if s >= STRONG_MATCH else "possible") for s, it in scored}
-            n = len(scored)
-            st.markdown(
-                f'<p class="lf-meta">{n} item{"s" if n != 1 else ""} look similar</p>',
-                unsafe_allow_html=True,
-            )
-            show_grid([it for _, it in scored], labels)
+            shown = ranked[:FALLBACK_RESULTS]
+            label = lambda s: "low"
+            meta = "No close matches. These are the closest items — worth a look."
+
+        if not shown:
+            empty_state("Nothing has been turned in yet.", " Check back later, or ask at the front office.")
+        else:
+            labels = {it["id"]: label(s) for s, it in shown}
+            scores = {it["id"]: s for s, it in shown} if SHOW_SCORES else None
+            st.markdown(f'<p class="lf-meta">{meta}</p>', unsafe_allow_html=True)
+            show_grid([it for _, it in shown], labels, scores)
         pickup_steps()
         return
 
-    # --- Browse / keyword search ---
+    # --- Keyword / category search (nothing shows until the student searches) ---
     words = query.lower().split()
+    if not words and category == "All categories":
+        n = len(items)
+        if n:
+            empty_state(
+                "Search to find your item.",
+                f" Type what you lost, pick a category, or search by photo. "
+                f"{n} item{'s are' if n != 1 else ' is'} waiting to be claimed.",
+            )
+        else:
+            empty_state("Nothing has been turned in yet.", " Check back later, or ask at the front office.")
+        pickup_steps()
+        return
+
     results = [
         it
         for it in items
         if (category == "All categories" or it["item_type"].lower() == category.lower())
         and matches_text(it, words)
     ]
-    heading = "Search results" if (words or category != "All categories") else "Recently turned in"
-    st.markdown(f'<p class="lf-h2">{heading}</p>', unsafe_allow_html=True)
+    st.markdown('<p class="lf-h2">Search results</p>', unsafe_allow_html=True)
     n = len(results)
     st.markdown(
         f'<p class="lf-meta">{n} item{"s" if n != 1 else ""} · newest first</p>',
         unsafe_allow_html=True,
     )
 
-    if not items:
-        empty_state("Nothing has been turned in yet.", " Check back later, or ask at the front office.")
-    elif not results:
+    if not results:
         empty_state(
             "No items match that search.",
             " Try fewer words, a different category, or search by photo.",
