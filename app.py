@@ -46,6 +46,9 @@ SHOW_SCORES = False
 
 DONATE_AFTER_DAYS = 30
 
+# Hallway screen: seconds each item stays on screen
+SLIDE_SECONDS = 10
+
 # Logo: the wide 1200x630 logo is trimmed to a square automatically.
 # (If you ever add a square "crest.png", it is used first.)
 LOGO_PATH = next(
@@ -838,6 +841,7 @@ def staff_page():
             st.caption("Scan to open Lost & Found on a phone.")
             st.link_button("Open printable QR", qr)
         a2.page_link(register_pg, label="Turn in item", icon=":material/add:")
+        st.page_link(hallway_pg, label="Open hallway screen", icon=":material/tv:")
         if a3.button("Log out", icon=":material/logout:"):
             st.session_state.is_staff = False
             st.rerun()
@@ -1002,11 +1006,117 @@ def staff_login():
                 st.error("That passcode isn't right. Check with the front office.")
 
 
+
 # =========================================================
-# 9. NAVIGATION
+# 9. PAGE: HALLWAY SCREEN (live slideshow for hallway TVs)
+# =========================================================
+HALLWAY_CSS = """
+<style>
+[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecoration"] { display: none !important; }
+.block-container { max-width: 100% !important; padding: 2.5vh 3vw 1.5vh !important; }
+.hw { height: 94vh; display: flex; flex-direction: column; gap: 2.2vh; color: #0F172A; }
+.hw-top { display: flex; align-items: center; justify-content: space-between; gap: 2vw; }
+.hw-brand { display: flex; align-items: center; gap: 1.2vw; }
+.hw-brand img { width: 6.5vh; height: 6.5vh; border-radius: 1.2vh; background: #fff; border: 1px solid #E2E8F0; }
+.hw-brand small { display: block; font-size: 1.8vh; font-weight: 600; color: #475569; }
+.hw-brand strong { display: block; font-size: 3.4vh; font-weight: 800; line-height: 1.1; }
+.hw-ask { font-size: 4.6vh; font-weight: 800; color: #3730A3; letter-spacing: -0.01em; }
+.hw-main { flex: 1; min-height: 0; display: flex; gap: 3vw; align-items: stretch; }
+.hw-photo { flex: 1.25; min-width: 0; border-radius: 2.4vh; overflow: hidden; background: #E2E8F0; display: flex; align-items: center; justify-content: center; }
+.hw-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.hw-photo span { font-size: 3vh; color: #475569; }
+.hw-info { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 1.6vh; }
+.hw-cat { font-size: 2.2vh; font-weight: 700; color: #475569; letter-spacing: .06em; text-transform: uppercase; }
+.hw-info h1 { margin: 0; font-size: 6vh; font-weight: 800; line-height: 1.08; letter-spacing: -0.02em; color: #0F172A; }
+.hw-found { margin: 0; font-size: 3vh; color: #334155; }
+.hw-pick { margin-top: 1.5vh; border-radius: 2.4vh; padding: 2.6vh 2.4vw; display: flex; align-items: center; justify-content: space-between; gap: 2vw; }
+.hw-pick.office { background: #4338CA; color: #fff; }
+.hw-pick.room { background: #FFF7ED; color: #9A3412; border: 0.4vh solid #FDBA74; }
+.hw-pick small { display: block; font-size: 2.2vh; font-weight: 700; letter-spacing: .08em; opacity: .85; }
+.hw-pick b { display: block; font-size: 5.4vh; font-weight: 800; line-height: 1.1; }
+.hw-slot { text-align: center; background: #fff; color: #3730A3; border-radius: 2vh; padding: 1.4vh 2.2vw; }
+.hw-slot small { font-size: 2vh; opacity: 1; }
+.hw-slot span { display: block; font-size: 11vh; font-weight: 800; line-height: 1; }
+.hw-id { margin: 0; font-size: 2.6vh; color: #475569; }
+.hw-bottom { display: flex; align-items: center; justify-content: space-between; gap: 3vw; }
+.hw-progress { flex: 1; display: flex; align-items: center; gap: 1.5vw; font-size: 2.2vh; font-weight: 700; color: #475569; }
+.hw-bar { flex: 1; height: 1vh; border-radius: 1vh; background: #E2E8F0; overflow: hidden; }
+.hw-bar div { height: 100%; background: #4338CA; border-radius: 1vh; }
+.hw-qr { display: flex; align-items: center; gap: 1.2vw; font-size: 2.2vh; font-weight: 700; color: #0F172A; }
+.hw-qr img { width: 11vh; height: 11vh; background: #fff; padding: .6vh; border-radius: 1vh; border: 1px solid #E2E8F0; }
+.hw-empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 2vh; }
+.hw-empty h1 { margin: 0; font-size: 7vh; font-weight: 800; }
+.hw-empty p { margin: 0; font-size: 3vh; color: #475569; }
+</style>
+"""
+
+
+def hallway_page():
+    st.markdown(HALLWAY_CSS, unsafe_allow_html=True)
+    st.session_state.setdefault("slide", 0)
+    hallway_slide()
+
+
+@st.fragment(run_every=SLIDE_SECONDS)
+def hallway_slide():
+    e = html.escape
+    items = load_items(returned=False)  # re-read every slide, so new items appear automatically
+    crest = crest_data_uri(LOGO_PATH, os.path.getmtime(LOGO_PATH)) if LOGO_PATH else ""
+    qr = "https://api.qrserver.com/v1/create-qr-code/?size=300x300&margin=0&data=" + urllib.parse.quote(APP_URL)
+    top = (
+        '<div class="hw-top"><div class="hw-brand">'
+        + (f'<img src="{crest}" alt="">' if crest else "")
+        + '<div><small>LISA Academy North</small><strong>Lost &amp; Found</strong></div></div>'
+        + '<div class="hw-ask">Is this yours?</div></div>'
+    )
+    qr_block = f'<div class="hw-qr"><img src="{qr}" alt="QR code"><span>Scan to search<br>all items</span></div>'
+
+    if not items:
+        page = (
+            f'<div class="hw">{top}<div class="hw-empty"><h1>Nothing in Lost &amp; Found right now</h1>'
+            "<p>Lost something? Scan the code to check online or ask at the front office.</p></div>"
+            f'<div class="hw-bottom"><div class="hw-progress"></div>{qr_block}</div></div>'
+        )
+        st.markdown(page, unsafe_allow_html=True)
+        return
+
+    i = st.session_state.slide % len(items)
+    st.session_state.slide = i + 1
+    it = items[i]
+
+    uri = thumb(it["image_path"], 1200)
+    photo = f'<img src="{uri}" alt="">' if uri else "<span>No photo</span>"
+    if it["holding_location"] == "Front Office" and it["slot_number"]:
+        pick = (
+            '<div class="hw-pick office"><div><small>PICK UP AT</small><b>Front Office</b></div>'
+            f'<div class="hw-slot"><small>SLOT</small><span>{it["slot_number"]}</span></div></div>'
+        )
+    else:
+        room = it.get("pickup_room") or it["location_found"]
+        pick = f'<div class="hw-pick room"><div><small>PICK UP FROM</small><b>{e(room)}</b></div></div>'
+
+    pct = round((i + 1) / len(items) * 100)
+    page = (
+        f'<div class="hw">{top}<div class="hw-main"><div class="hw-photo">{photo}</div>'
+        '<div class="hw-info">'
+        f'<div class="hw-cat">{e(it["item_type"])} · Turned in {e(nice_date(it["date_found"]))}</div>'
+        f"<h1>{e(item_title(it))}</h1>"
+        f'<p class="hw-found">Found in {e(it["location_found"])}</p>'
+        f"{pick}"
+        '<p class="hw-id">Bring your student ID to pick it up.</p>'
+        "</div></div>"
+        f'<div class="hw-bottom"><div class="hw-progress"><span>{i + 1} of {len(items)}</span>'
+        f'<div class="hw-bar"><div style="width:{pct}%"></div></div></div>{qr_block}</div></div>'
+    )
+    st.markdown(page, unsafe_allow_html=True)
+
+
+# =========================================================
+# 10. NAVIGATION
 # =========================================================
 find_pg = st.Page(find_page, title="Find an item", icon=":material/search:", url_path="find", default=True)
 register_pg = st.Page(register_page, title="Turn in an item", icon=":material/add_box:", url_path="turn-in")
 staff_pg = st.Page(staff_page, title="Staff", icon=":material/lock:", url_path="staff")
+hallway_pg = st.Page(hallway_page, title="Hallway screen", icon=":material/tv:", url_path="hallway")
 
-st.navigation([find_pg, register_pg, staff_pg], position="top").run()
+st.navigation([find_pg, register_pg, staff_pg, hallway_pg], position="top").run()
