@@ -46,6 +46,19 @@ SHOW_SCORES = False
 
 DONATE_AFTER_DAYS = 30
 
+# Word filter for descriptions and room fields (first layer only; staff review is the real check).
+# Words are matched after common letter swaps (@ -> a, 0 -> o, $ -> s ...).
+# Add words to this list if you see new ones get through.
+BLOCKED_EXACT = {
+    "ass", "sex", "tit", "tits", "cum", "hoe", "hoes", "dick", "dicks", "dickhead",
+    "cock", "cocks", "nudes", "fag", "fags", "wtf", "stfu", "kys",
+}
+BLOCKED_PREFIXES = (
+    "fuck", "fuk", "shit", "bitch", "asshole", "bastard", "cunt", "pussy",
+    "slut", "whore", "nigg", "faggot", "retard", "porn", "penis",
+    "vagina", "boob", "dildo", "horny",
+)
+
 # Hallway screen: seconds each item stays on screen
 SLIDE_SECONDS = 10
 
@@ -206,7 +219,10 @@ def init_db():
             "holding_location": "TEXT DEFAULT 'Front Office'",
             "claimed_by": "TEXT",
             "returned_at": "TIMESTAMP",
-            "pickup_room": "TEXT",  # new: classroom where the student collects it
+            "pickup_room": "TEXT",  # classroom where the student collects it
+            "status": "TEXT DEFAULT 'approved'",  # 'pending' = waiting for staff review
+            "reported": "INTEGER DEFAULT 0",
+            "report_reason": "TEXT",
         }
         for name, kind in migrations.items():
             if name not in cols:
@@ -235,19 +251,73 @@ def next_free_slot():
 
 ITEM_COLUMNS = (
     "id, slot_number, holding_location, item_type, location_found, date_found, "
-    "notes, image_path, vector_path, pickup_room, claimed_by, returned_at"
+    "notes, image_path, vector_path, pickup_room, claimed_by, returned_at, "
+    "status, reported, report_reason, created_at"
 )
 
 
-def load_items(returned=False):
+def load_items(returned=False, status="approved"):
+    """Public pages only ever see status='approved'. Staff review uses status='pending'."""
     order = "returned_at DESC" if returned else "date_found DESC, id DESC"
     with db() as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
-            f"SELECT {ITEM_COLUMNS} FROM items WHERE is_returned = ? ORDER BY {order}",
-            (1 if returned else 0,),
+            f"SELECT {ITEM_COLUMNS} FROM items WHERE is_returned = ? "
+            f"AND COALESCE(status, 'approved') = ? ORDER BY {order}",
+            (1 if returned else 0, status),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+def approve_item(item_id):
+    with db() as conn:
+        conn.execute(
+            "UPDATE items SET status = 'approved', reported = 0, report_reason = NULL WHERE id = ?",
+            (item_id,),
+        )
+
+
+def reject_item(item_id):
+    """Delete the item and its photo, so inappropriate images are not kept anywhere."""
+    with db() as conn:
+        row = conn.execute(
+            "SELECT image_path, vector_path FROM items WHERE id = ?", (item_id,)
+        ).fetchone()
+        conn.execute("DELETE FROM items WHERE id = ?", (item_id,))
+    for path in row or []:
+        if path and os.path.exists(path):
+            os.remove(path)
+
+
+def report_item(item_id, reason):
+    """Hide a reported item right away; it goes back to the staff review list."""
+    with db() as conn:
+        conn.execute(
+            "UPDATE items SET status = 'pending', reported = 1, report_reason = ? WHERE id = ?",
+            (reason, item_id),
+        )
+
+
+def has_blocked_words(*texts):
+    swaps = str.maketrans({"@": "a", "4": "a", "0": "o", "1": "i", "!": "i", "3": "e", "$": "s", "5": "s", "7": "t"})
+    for text in texts:
+        t = (text or "").lower().translate(swaps)
+        t = re.sub(r"(.)\1{2,}", r"\1", t)  # "fuuuuck" -> "fuck"
+        words, letters = [], ""
+        for w in re.findall(r"[a-z]+", t):
+            if len(w) == 1:  # join spaced-out letters: "f u c k" / "f.u.c.k" -> "fuck"
+                letters += w
+                continue
+            if letters:
+                words.append(letters)
+                letters = ""
+            words.append(w)
+        if letters:
+            words.append(letters)
+        for word in words:
+            if word in BLOCKED_EXACT or word.startswith(BLOCKED_PREFIXES):
+                return True
+    return False
 
 
 def mark_returned(item_ids, claimed_by):
@@ -531,6 +601,9 @@ def find_page():
                     key=f"up_{k}",
                 )
 
+    if st.session_state.pop("report_sent", False):
+        st.success("Thanks for reporting. The item is hidden until a staff member checks it.")
+
     k = st.session_state.photo_key
     photo = st.session_state.get(f"cam_{k}") or st.session_state.get(f"up_{k}")
     items = load_items(returned=False)
@@ -573,7 +646,7 @@ def find_page():
             labels = {it["id"]: label(s) for s, it in shown}
             scores = {it["id"]: s for s, it in shown} if SHOW_SCORES else None
             st.markdown(f'<p class="lf-meta">{meta}</p>', unsafe_allow_html=True)
-            show_grid([it for _, it in shown], labels, scores)
+            show_cards_with_report([it for _, it in shown], labels, scores)
         pickup_steps()
         return
 
@@ -611,7 +684,7 @@ def find_page():
             " Try fewer words, a different category, or search by photo.",
         )
     else:
-        show_grid(results)
+        show_cards_with_report(results)
     pickup_steps()
 
 
@@ -627,6 +700,37 @@ def pickup_steps():
     )
 
 
+def show_cards_with_report(items, matches=None, scores=None, per_row=3):
+    """Cards in rows of three, each with a small 'Report' button underneath."""
+    for start in range(0, len(items), per_row):
+        cols = st.columns(per_row, gap="medium")
+        for col, it in zip(cols, items[start:start + per_row]):
+            with col:
+                card = card_html(it, (matches or {}).get(it["id"]), (scores or {}).get(it["id"]))
+                st.markdown(re.sub(r"\n\s*", "", card), unsafe_allow_html=True)
+                if st.button("Report", key=f"report_{it['id']}", type="tertiary", icon=":material/flag:"):
+                    report_dialog(it["id"])
+
+
+@st.dialog("Report this item")
+def report_dialog(item_id):
+    st.write("Tell staff what's wrong. The item will be hidden until a staff member checks it.")
+    reason = st.radio(
+        "What's the problem?",
+        [
+            "Inappropriate photo",
+            "Inappropriate description",
+            "Shows a person's face or private information",
+            "Not a real lost item",
+            "Other",
+        ],
+    )
+    if st.button("Send report", type="primary"):
+        report_item(item_id, reason)
+        st.session_state.report_sent = True
+        st.rerun()
+
+
 # =========================================================
 # 7. PAGE: TURN IN AN ITEM
 # =========================================================
@@ -638,14 +742,18 @@ def register_page():
     # Confirmation screen after a successful submit
     done = st.session_state.get("last_registered")
     if done:
-        st.markdown('<h1 class="lf-title">Item added</h1>', unsafe_allow_html=True)
+        pending = done.get("pending")
+        st.markdown(
+            f'<h1 class="lf-title">{"Thanks! Item sent for review" if pending else "Item added"}</h1>',
+            unsafe_allow_html=True,
+        )
         left, right = st.columns([1, 1.3])
         with left:
             if done["slot"]:
                 st.markdown(
                     f"""<div class="lf-tag"><div class="label">Tag for this item</div>
 <div class="slot"><small>SLOT</small><span>{done['slot']}</span></div>
-<p>Write <b>{done['slot']}</b> on the tag and hang it on hook {done['slot']}.</p></div>""",
+<p>{"Bring the item to the front office. It goes on hook " + str(done['slot']) + "." if pending else "Write <b>" + str(done['slot']) + "</b> on the tag and hang it on hook " + str(done['slot']) + "."}</p></div>""",
                     unsafe_allow_html=True,
                 )
             else:
@@ -657,11 +765,13 @@ def register_page():
                     unsafe_allow_html=True,
                 )
         with right:
-            st.markdown(
-                '<p class="lf-sub" style="margin-top:.4rem">It now shows up for students '
-                "searching Lost &amp; Found.</p>",
-                unsafe_allow_html=True,
+            msg = (
+                "A staff member will check the photo and description before it appears "
+                "in search and on the hallway screen."
+                if pending
+                else "It now shows up for students searching Lost &amp; Found and on the hallway screen."
             )
+            st.markdown(f'<p class="lf-sub" style="margin-top:.4rem">{msg}</p>', unsafe_allow_html=True)
             if st.button("Turn in another item", type="primary", icon=":material/add:"):
                 st.session_state.pop("last_registered")
                 st.session_state.reg_key += 1
@@ -673,6 +783,14 @@ def register_page():
         '<p class="lf-sub">Takes about a minute. Fields marked * are required.</p>',
         unsafe_allow_html=True,
     )
+    if st.session_state.get("is_staff"):
+        st.caption("Signed in as staff: this item will appear right away.")
+    else:
+        st.info(
+            "Items turned in by students are checked by staff before they appear. "
+            "Photograph only the item, with no people in the picture.",
+            icon=":material/verified_user:",
+        )
 
     form_col, side_col = st.columns([2, 1], gap="large")
 
@@ -761,6 +879,8 @@ def register_page():
             problems.append("Enter where the item was found.")
         if keep == "My classroom" and not pickup_room.strip():
             problems.append("Enter the room where students can pick it up.")
+        if has_blocked_words(where, notes, pickup_room):
+            problems.append("Please remove inappropriate language from the description or room fields.")
         if problems:
             with form_col:
                 st.error("  \n".join(problems))
@@ -780,6 +900,7 @@ def save_item(photo, item_type, where, found_on, notes, keep, pickup_room):
     vector = photo_vector(raw)
     ext = os.path.splitext(getattr(photo, "name", "") or "")[1].lower() or ".jpg"
 
+    status = "approved" if st.session_state.get("is_staff") else "pending"
     conn = db()
     try:
         c = conn.cursor()
@@ -790,8 +911,8 @@ def save_item(photo, item_type, where, found_on, notes, keep, pickup_room):
             slot, holding, room = None, "Classroom", pickup_room
         c.execute(
             "INSERT INTO items (slot_number, holding_location, item_type, location_found, "
-            "date_found, notes, image_path, pickup_room) VALUES (?, ?, ?, ?, ?, ?, '', ?)",
-            (slot, holding, item_type, where, found_on.strftime("%Y-%m-%d"), notes, room),
+            "date_found, notes, image_path, pickup_room, status) VALUES (?, ?, ?, ?, ?, ?, '', ?, ?)",
+            (slot, holding, item_type, where, found_on.strftime("%Y-%m-%d"), notes, room, status),
         )
         new_id = c.lastrowid
         img_path = os.path.join(UPLOAD_DIR, f"item_{new_id}{ext}")
@@ -813,7 +934,7 @@ def save_item(photo, item_type, where, found_on, notes, keep, pickup_room):
     finally:
         conn.close()
 
-    st.session_state.last_registered = {"slot": slot, "room": pickup_room}
+    st.session_state.last_registered = {"slot": slot, "room": pickup_room, "pending": status == "pending"}
     st.rerun()
 
 
@@ -848,12 +969,14 @@ def staff_page():
 
     active = load_items(returned=False)
     returned = load_items(returned=True)
+    pending = load_items(returned=False, status="pending")
     month = date.today().strftime("%Y-%m")
     returned_month = sum(1 for r in returned if str(r["returned_at"] or "").startswith(month))
     old = sum(1 for it in active if days_waiting(it) >= DONATE_AFTER_DAYS)
 
     st.markdown(
         f"""<div class="lf-metrics">
+<div class="lf-metric{' warn' if pending else ''}"><span>Needs review</span><b>{len(pending)}</b></div>
 <div class="lf-metric"><span>Unclaimed</span><b>{len(active)}</b></div>
 <div class="lf-metric"><span>Returned this month</span><b>{returned_month}</b></div>
 <div class="lf-metric{' warn' if old else ''}"><span>Waiting {DONATE_AFTER_DAYS}+ days</span><b>{old}</b></div>
@@ -873,7 +996,16 @@ def staff_page():
             st.session_state.undo_ids = None
             st.rerun()
 
-    tab_active, tab_history = st.tabs([f"Active ({len(active)})", "Returned history"])
+    labels = [f"Active ({len(active)})", "Returned history"]
+    if pending:
+        labels.insert(0, f"Needs review ({len(pending)})")
+    tabs = st.tabs(labels)
+    if pending:
+        with tabs[0]:
+            review_queue(pending)
+        tab_active, tab_history = tabs[1], tabs[2]
+    else:
+        tab_active, tab_history = tabs
 
     with tab_active:
         f1, f2 = st.columns([1.3, 2], vertical_alignment="bottom")
@@ -964,6 +1096,48 @@ def staff_page():
                     hide_index=True,
                     column_config={"Photo": st.column_config.ImageColumn("Photo", width="small")},
                 )
+
+
+def review_queue(pending):
+    st.caption(
+        "Student uploads and reported items wait here. Nothing in this list appears in "
+        "search or on the hallway screen until you approve it. Rejecting deletes the item and its photo."
+    )
+    for it in pending:
+        with st.container(border=True):
+            c1, c2, c3 = st.columns([1.2, 2.4, 1.2], vertical_alignment="center")
+            uri = thumb(it["image_path"], 480)
+            c1.markdown(
+                f'<img class="lf-photo" style="border-radius:10px" src="{uri}" alt="">' if uri
+                else '<div class="lf-nophoto">No photo</div>',
+                unsafe_allow_html=True,
+            )
+            with c2:
+                if it.get("reported"):
+                    st.warning(f"Reported: {it.get('report_reason') or 'no reason given'}", icon=":material/flag:")
+                st.markdown(f"**{item_title(it)}**")
+                st.caption(
+                    f"{it['item_type']} · found in {it['location_found']} · "
+                    f"{nice_date(it['date_found'])} · {pickup_text(it)[0]}"
+                )
+            with c3:
+                if st.button("Approve", key=f"approve_{it['id']}", type="primary", icon=":material/check:"):
+                    approve_item(it["id"])
+                    st.toast("Approved. The item is now visible.")
+                    st.rerun()
+                if st.button("Reject", key=f"reject_{it['id']}", icon=":material/delete:"):
+                    confirm_reject(it["id"])
+
+
+@st.dialog("Reject this item?")
+def confirm_reject(item_id):
+    st.write("The item and its photo will be permanently deleted, and its office slot will be freed.")
+    c1, c2 = st.columns(2)
+    if c1.button("Delete item", type="primary"):
+        reject_item(item_id)
+        st.rerun()
+    if c2.button("Cancel"):
+        st.rerun()
 
 
 @st.dialog("Mark returned")
