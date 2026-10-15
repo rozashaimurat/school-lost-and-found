@@ -6,6 +6,7 @@ import base64
 import html
 import io
 import os
+import re
 import sqlite3
 import urllib.parse
 import urllib.request
@@ -83,7 +84,7 @@ html, body, .stApp, .stApp p, .stApp label, .stApp input, .stApp textarea,
 .stApp button, .stApp select, .stApp h1, .stApp h2, .stApp h3 {
     font-family: 'Public Sans', 'Segoe UI', system-ui, sans-serif;
 }
-.block-container { max-width: 1200px; padding-top: 2.2rem; padding-bottom: 4rem; }
+.block-container { max-width: 1200px; padding-top: 4.5rem; padding-bottom: 4rem; }
 
 /* Page headings */
 .lf-title { font-size: 2.4rem; font-weight: 800; letter-spacing: -0.02em; margin: 0 0 .35rem; color: #0F172A; line-height: 1.15; }
@@ -368,7 +369,10 @@ def card_html(item, match=None):
 
 def show_grid(items, matches=None):
     cards = [card_html(it, (matches or {}).get(it["id"])) for it in items]
-    st.markdown(f'<div class="lf-grid">{"".join(cards)}</div>', unsafe_allow_html=True)
+    block = f'<div class="lf-grid">{"".join(cards)}</div>'
+    # Remove line breaks + indentation: Markdown treats indented lines as code blocks.
+    block = re.sub(r"\n\s*", "", block)
+    st.markdown(block, unsafe_allow_html=True)
 
 
 def empty_state(title, text):
