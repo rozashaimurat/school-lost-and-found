@@ -33,7 +33,7 @@ MODEL_URL = (
 )
 APP_URL = "https://school-lost-and-found-exey2emwyf5hcxwktbyskv.streamlit.app/"
 
-CATEGORIES = ["Water bottle", "Jacket", "Lunch box", "Backpack", "Other"]
+CATEGORIES = ["Water bottle", "Jacket", "Lunch box", "Backpack", "Uniform", "Other"]
 
 # Photo-match labels. Tune these after testing with real photos:
 # print a few scores, then set the cut-offs where matches start looking wrong.
