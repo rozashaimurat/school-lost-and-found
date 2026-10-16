@@ -45,6 +45,8 @@ FALLBACK_RESULTS = 3
 SHOW_SCORES = False
 
 DONATE_AFTER_DAYS = 30
+# From this many days on, items show a "last chance" warning (hallway screen + search cards)
+LAST_CHANCE_DAYS = 25
 
 # Word filter for descriptions and room fields (first layer only; staff review is the real check).
 # Words are matched after common letter swaps (@ -> a, 0 -> o, $ -> s ...).
@@ -130,6 +132,7 @@ html, body, .stApp, .stApp p, .stApp label, .stApp input, .stApp textarea,
 .lf-row .cat { font-weight: 700; }
 .lf-name { margin: 0; font-size: 1.1rem; font-weight: 700; color: #0F172A; line-height: 1.3; }
 .lf-found { margin: 0 0 6px; font-size: 14px; color: #475569; }
+.lf-last { padding: 8px 12px; border-radius: 10px; background: #FEF2F2; color: #991B1B; border: 1px solid #FECACA; font-size: 13px; font-weight: 700; }
 .lf-pickup { margin-top: auto; padding: 10px 12px; border-radius: 10px; font-size: 14px; font-weight: 700; }
 .lf-pickup.office { background: #EEF2FF; color: #3730A3; }
 .lf-pickup.room { background: #FFF7ED; color: #9A3412; }
@@ -459,6 +462,19 @@ def days_waiting(item):
         return 0
 
 
+def last_chance_text(item):
+    """Warning for items close to being donated or thrown away, or None."""
+    days = days_waiting(item)
+    if days < LAST_CHANCE_DAYS:
+        return None
+    left = DONATE_AFTER_DAYS - days
+    if left > 1:
+        return f"Last chance! This item will be donated or thrown away in {left} days."
+    if left == 1:
+        return "Last chance! This item will be donated or thrown away tomorrow."
+    return "Last chance! This item will be donated or thrown away very soon."
+
+
 def pickup_text(item):
     if item["holding_location"] == "Front Office" and item["slot_number"]:
         return f"Front Office · Slot {item['slot_number']}", "office"
@@ -498,6 +514,7 @@ def card_html(item, match=None, score=None):
     <div class="lf-row"><span class="cat">{e(item['item_type'])}</span><span>{e(nice_date(item['date_found']))}</span></div>
     <h3 class="lf-name">{e(item_title(item))}</h3>
     <p class="lf-found">Found in {e(item['location_found'])}</p>
+    {f'<div class="lf-last">{e(last_chance_text(item))}</div>' if last_chance_text(item) else ""}
     <div class="lf-pickup {kind}">{e(pickup)}</div>
   </div>
 </article>"""
@@ -1211,6 +1228,8 @@ HALLWAY_CSS = """
 .hw-slot { text-align: center; background: #fff; color: #3730A3; border-radius: 2vh; padding: 1.4vh 2.2vw; }
 .hw-slot small { font-size: 2vh; opacity: 1; }
 .hw-slot span { display: block; font-size: 11vh; font-weight: 800; line-height: 1; }
+.hw-last { display: flex; align-items: center; gap: 1.2vw; padding: 1.8vh 1.8vw; border-radius: 1.8vh; background: #DC2626; color: #fff; font-size: 3vh; font-weight: 800; line-height: 1.2; }
+.hw-last .icon { flex-shrink: 0; width: 5vh; height: 5vh; border-radius: 999px; background: #fff; color: #DC2626; display: flex; align-items: center; justify-content: center; font-size: 3.4vh; font-weight: 800; }
 .hw-id { margin: 0; font-size: 2.6vh; color: #475569; }
 .hw-bottom { display: flex; align-items: center; justify-content: space-between; gap: 3vw; }
 .hw-progress { flex: 1; display: flex; align-items: center; gap: 1.5vw; font-size: 2.2vh; font-weight: 700; color: #475569; }
@@ -1269,10 +1288,13 @@ def hallway_slide():
         room = it.get("pickup_room") or it["location_found"]
         pick = f'<div class="hw-pick room"><div><small>PICK UP FROM</small><b>{e(room)}</b></div></div>'
 
+    warning = last_chance_text(it)
+    last = f'<div class="hw-last"><span class="icon">!</span><span>{e(warning)}</span></div>' if warning else ""
     pct = round((i + 1) / len(items) * 100)
     page = (
         f'<div class="hw">{top}<div class="hw-main"><div class="hw-photo">{photo}</div>'
         '<div class="hw-info">'
+        f"{last}"
         f'<div class="hw-cat">{e(it["item_type"])} · Turned in {e(nice_date(it["date_found"]))}</div>'
         f"<h1>{e(item_title(it))}</h1>"
         f'<p class="hw-found">Found in {e(it["location_found"])}</p>'
