@@ -17,7 +17,7 @@ import pandas as pd
 import streamlit as st
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
-from PIL import Image, ImageChops, ImageOps
+from PIL import Image, ImageChops, ImageCms, ImageOps
 
 # =========================================================
 # 1. SETTINGS
@@ -40,8 +40,15 @@ CATEGORIES = ["Water bottle", "Jacket", "Lunch box", "Backpack", "Other"]
 # Turn on SHOW_SCORES to see each card's score while you test.
 STRONG_MATCH = 0.45
 POSSIBLE_MATCH = 0.20
+# Color check: the AI "shape" score above knows a jacket is a jacket, but it barely
+# notices color. So we also compare colors (0 = totally different, 1 = same colors).
+# In our tests the same item scored 0.58-0.92 (even in different lighting or on a
+# different background) and a black jacket vs. a green jacket scored 0.34.
+COLOR_STRONG = 0.55   # needed for "Strong match"
+COLOR_MATCH = 0.45    # needed to show an item at all
 # If nothing reaches POSSIBLE_MATCH, still show this many closest items
-# (labeled "Worth a look") so a real match is never hidden completely.
+# (labeled "Worth a look") so a real match is never hidden completely —
+# but only items whose colors match.
 FALLBACK_RESULTS = 3
 SHOW_SCORES = False
 
@@ -350,6 +357,40 @@ def item_vectors(item):
         return []
 
 
+_LAB = ImageCms.buildTransformFromOpenProfiles(
+    ImageCms.createProfile("sRGB"), ImageCms.createProfile("LAB"), "RGB", "LAB"
+)
+
+
+def color_signature(img):
+    """A smoothed color histogram of the middle of the photo.
+    Uses LAB colors (closer to how people see color) and ignores white backgrounds."""
+    img = _center_crop(ImageOps.exif_transpose(img).convert("RGB"), 0.7).resize((96, 96))
+    L, a, b = (np.asarray(ch, dtype=float).ravel() for ch in ImageCms.applyTransform(img, _LAB).split())
+    L, a, b = L * 100 / 255, a - 128, b - 128
+    background = (L > 92) & (np.abs(a) < 6) & (np.abs(b) < 6)  # plain white backdrop
+    if background.mean() < 0.9:
+        L, a, b = L[~background], a[~background], b[~background]
+    hist, _ = np.histogramdd(
+        np.stack([L, a, b], axis=1), bins=(5, 8, 8), range=((0, 100), (-40, 40), (-40, 40))
+    )
+    # Blur the histogram a little so small lighting changes don't matter
+    padded = np.pad(hist, 1)
+    smooth = sum(
+        padded[i:i + 5, j:j + 8, k:k + 8] for i in range(3) for j in range(3) for k in range(3)
+    )
+    return smooth / smooth.sum()
+
+
+def color_similarity(c1, c2):
+    return float(np.minimum(c1, c2).sum())
+
+
+@st.cache_data(show_spinner=False, max_entries=1000)
+def stored_color(image_path):
+    return color_signature(Image.open(io.BytesIO(photo_bytes(image_path))))
+
+
 def best_score(qvecs, ivecs):
     return max((cosine(q, v) for q in qvecs for v in ivecs), default=0.0)
 
@@ -442,7 +483,7 @@ def card_html(item, match=None, score=None):
     elif match == "low":
         badge = '<span class="lf-match low">Worth a look</span>'
     if score is not None:
-        badge += f'<span class="lf-match low">score {score:.2f}</span>'
+        badge += f'<span class="lf-match low">{e(str(score))}</span>'
     return f"""
 <article class="lf-card{best}">
   {photo}
@@ -565,7 +606,18 @@ def find_page():
     # --- Photo search results ---
     if photo is not None:
         top = st.columns([1, 5, 1.2], vertical_alignment="center")
-        top[0].image(photo, width=88)
+        try:
+            qimg = ImageOps.exif_transpose(Image.open(io.BytesIO(photo.getvalue()))).convert("RGB")
+            qimg.thumbnail((176, 176))
+            qbuf = io.BytesIO()
+            qimg.save(qbuf, format="JPEG", quality=85)
+            top[0].markdown(
+                '<img alt="Your photo" style="width:88px;height:88px;object-fit:cover;border-radius:10px" '
+                f'src="data:image/jpeg;base64,{base64.b64encode(qbuf.getvalue()).decode()}">',
+                unsafe_allow_html=True,
+            )
+        except Exception:
+            pass
         with top[1]:
             st.markdown('<p class="lf-h2" style="margin:0">Photo matches</p>', unsafe_allow_html=True)
         if top[2].button("Clear photo", icon=":material/close:"):
@@ -576,31 +628,49 @@ def find_page():
             qvecs = query_vectors(photo.getvalue())
             if qvecs is None:
                 return
-            ranked = []
+            qcolor = color_signature(Image.open(io.BytesIO(photo.getvalue())))
+            ranked = []  # (shape score, color score, item)
             for it in items:
                 ivecs = item_vectors(it)
-                if ivecs:
-                    ranked.append((best_score(qvecs, ivecs), it))
-        ranked.sort(key=lambda x: x[0], reverse=True)
+                if not ivecs:
+                    continue
+                try:
+                    color = color_similarity(qcolor, stored_color(it["image_path"]))
+                except Exception:
+                    color = 0.0
+                ranked.append((best_score(qvecs, ivecs), color, it))
+        # Sort by a mix of both scores; shape matters most
+        ranked.sort(key=lambda x: 0.6 * x[0] + 0.4 * x[1], reverse=True)
+        same_color = [r for r in ranked if r[1] >= COLOR_MATCH]
 
-        good = [(s, it) for s, it in ranked if s >= POSSIBLE_MATCH][:6]
+        good = [r for r in same_color if r[0] >= POSSIBLE_MATCH][:6]
         if good:
             shown = good
-            label = lambda s: "strong" if s >= STRONG_MATCH else "possible"
+            label = lambda shape, color: (
+                "strong" if shape >= STRONG_MATCH and color >= COLOR_STRONG else "possible"
+            )
             n = len(shown)
             meta = f'{n} item{"s" if n != 1 else ""} look similar'
         else:
-            shown = ranked[:FALLBACK_RESULTS]
-            label = lambda s: "low"
-            meta = "No close matches. These are the closest items — worth a look."
+            shown = same_color[:FALLBACK_RESULTS]
+            label = lambda shape, color: "low"
+            meta = "No close matches. These items have similar colors — worth a look."
 
-        if not shown:
+        if not ranked:
             empty_state("Nothing has been turned in yet.", " Check back later, or ask at the front office.")
+        elif not shown:
+            empty_state(
+                "No matches for this photo.",
+                " Nothing turned in looks like your item. Try another photo, or search by words above.",
+            )
         else:
-            labels = {it["id"]: label(s) for s, it in shown}
-            scores = {it["id"]: s for s, it in shown} if SHOW_SCORES else None
+            labels = {it["id"]: label(sh, co) for sh, co, it in shown}
+            scores = (
+                {it["id"]: f"shape {sh:.2f} · color {co:.2f}" for sh, co, it in shown}
+                if SHOW_SCORES else None
+            )
             st.markdown(f'<p class="lf-meta">{meta}</p>', unsafe_allow_html=True)
-            show_cards_with_report([it for _, it in shown], labels, scores)
+            show_cards_with_report([it for _, _, it in shown], labels, scores)
         pickup_steps()
         return
 
