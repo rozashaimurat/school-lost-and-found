@@ -7,10 +7,9 @@ import html
 import io
 import os
 import re
-import sqlite3
 import urllib.parse
 import urllib.request
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import mediapipe as mp
 import numpy as np
@@ -23,9 +22,11 @@ from PIL import Image, ImageChops, ImageOps
 # =========================================================
 # 1. SETTINGS
 # =========================================================
-DB_FILE = "lost_and_found.db"
-UPLOAD_DIR = "uploads"
-VECTOR_DIR = "vectors"
+# Items and photos are stored in Supabase (a free online database), so they are
+# NOT lost when Streamlit restarts. Keys go in Streamlit Secrets:
+#   SUPABASE_URL = "https://xxxx.supabase.co"
+#   SUPABASE_KEY = "your secret / service_role key"
+PHOTO_BUCKET = "item-photos"
 MODEL_PATH = "mobilenet_v3_small.tflite"
 MODEL_URL = (
     "https://storage.googleapis.com/mediapipe-models/image_embedder/"
@@ -77,9 +78,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed",
 )
-
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-os.makedirs(VECTOR_DIR, exist_ok=True)
 
 if not os.path.exists(MODEL_PATH):
     with st.spinner("Setting up photo search…"):
@@ -187,118 +185,71 @@ html, body, .stApp, .stApp p, .stApp label, .stApp input, .stApp textarea,
 
 
 # =========================================================
-# 3. DATABASE
+# 3. DATABASE (SUPABASE)
 # =========================================================
-def db():
-    return sqlite3.connect(DB_FILE, timeout=10)
+from supabase import create_client  # noqa: E402
 
 
-def init_db():
-    with db() as conn:
-        c = conn.cursor()
-        c.execute(
-            """
-            CREATE TABLE IF NOT EXISTS items (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                slot_number INTEGER,
-                holding_location TEXT DEFAULT 'Front Office',
-                item_type TEXT NOT NULL,
-                location_found TEXT NOT NULL,
-                date_found TEXT NOT NULL,
-                notes TEXT,
-                image_path TEXT NOT NULL,
-                vector_path TEXT,
-                is_returned INTEGER DEFAULT 0,
-                claimed_by TEXT,
-                returned_at TIMESTAMP,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            """
+@st.cache_resource
+def sb():
+    """One shared connection to Supabase."""
+    try:
+        url, key = st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"]
+    except Exception:
+        st.error(
+            "The database isn't connected yet. Add SUPABASE_URL and SUPABASE_KEY "
+            "in the app's Secrets (Streamlit Cloud: App settings → Secrets)."
         )
-        c.execute("PRAGMA table_info(items)")
-        cols = {row[1] for row in c.fetchall()}
-        migrations = {
-            "slot_number": "INTEGER",
-            "holding_location": "TEXT DEFAULT 'Front Office'",
-            "claimed_by": "TEXT",
-            "returned_at": "TIMESTAMP",
-            "pickup_room": "TEXT",  # classroom where the student collects it
-            "status": "TEXT DEFAULT 'approved'",  # 'pending' = waiting for staff review
-            "reported": "INTEGER DEFAULT 0",
-            "report_reason": "TEXT",
-        }
-        for name, kind in migrations.items():
-            if name not in cols:
-                c.execute(f"ALTER TABLE items ADD COLUMN {name} {kind}")
+        st.stop()
+    return create_client(url, key)
 
 
-init_db()
-
-
-def lowest_free_slot(cursor):
-    cursor.execute(
-        "SELECT slot_number FROM items WHERE is_returned = 0 "
-        "AND holding_location = 'Front Office' AND slot_number IS NOT NULL"
+def next_free_slot():
+    """Preview of the lowest empty office slot (the real one is assigned by the database)."""
+    rows = (
+        sb().table("items").select("slot_number")
+        .eq("is_returned", False).eq("holding_location", "Front Office")
+        .not_.is_("slot_number", "null").execute().data
     )
-    taken = {row[0] for row in cursor.fetchall()}
+    taken = {r["slot_number"] for r in rows}
     slot = 1
     while slot in taken:
         slot += 1
     return slot
 
 
-def next_free_slot():
-    with db() as conn:
-        return lowest_free_slot(conn.cursor())
-
-
-ITEM_COLUMNS = (
-    "id, slot_number, holding_location, item_type, location_found, date_found, "
-    "notes, image_path, vector_path, pickup_room, claimed_by, returned_at, "
-    "status, reported, report_reason, created_at"
-)
-
-
 def load_items(returned=False, status="approved"):
     """Public pages only ever see status='approved'. Staff review uses status='pending'."""
-    order = "returned_at DESC" if returned else "date_found DESC, id DESC"
-    with db() as conn:
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            f"SELECT {ITEM_COLUMNS} FROM items WHERE is_returned = ? "
-            f"AND COALESCE(status, 'approved') = ? ORDER BY {order}",
-            (1 if returned else 0, status),
-        ).fetchall()
-    return [dict(r) for r in rows]
+    q = sb().table("items").select("*").eq("is_returned", returned).eq("status", status)
+    if returned:
+        q = q.order("returned_at", desc=True)
+    else:
+        q = q.order("date_found", desc=True).order("id", desc=True)
+    return q.execute().data or []
 
 
 def approve_item(item_id):
-    with db() as conn:
-        conn.execute(
-            "UPDATE items SET status = 'approved', reported = 0, report_reason = NULL WHERE id = ?",
-            (item_id,),
-        )
+    sb().table("items").update(
+        {"status": "approved", "reported": False, "report_reason": None}
+    ).eq("id", item_id).execute()
 
 
 def reject_item(item_id):
     """Delete the item and its photo, so inappropriate images are not kept anywhere."""
-    with db() as conn:
-        row = conn.execute(
-            "SELECT image_path, vector_path FROM items WHERE id = ?", (item_id,)
-        ).fetchone()
-        conn.execute("DELETE FROM items WHERE id = ?", (item_id,))
-    for path in row or []:
-        if path and os.path.exists(path):
-            os.remove(path)
+    rows = sb().table("items").select("image_path").eq("id", item_id).execute().data
+    sb().table("items").delete().eq("id", item_id).execute()
+    if rows and rows[0].get("image_path"):
+        try:
+            sb().storage.from_(PHOTO_BUCKET).remove([rows[0]["image_path"]])
+        except Exception:
+            pass
 
 
 def report_item(item_id, reason):
     """Hide a reported item right away; it goes back to the staff review list."""
-    with db() as conn:
-        conn.execute(
-            "UPDATE items SET status = 'pending', reported = 1, report_reason = ? WHERE id = ?",
-            (reason, item_id),
-        )
+    sb().table("items").update(
+        {"status": "pending", "reported": True, "report_reason": reason}
+    ).eq("id", item_id).execute()
 
 
 def has_blocked_words(*texts):
@@ -324,20 +275,21 @@ def has_blocked_words(*texts):
 
 
 def mark_returned(item_ids, claimed_by):
-    with db() as conn:
-        conn.executemany(
-            "UPDATE items SET is_returned = 1, claimed_by = ?, "
-            "returned_at = CURRENT_TIMESTAMP WHERE id = ?",
-            [(claimed_by, i) for i in item_ids],
-        )
+    sb().table("items").update(
+        {"is_returned": True, "claimed_by": claimed_by, "returned_at": datetime.now(timezone.utc).isoformat()}
+    ).in_("id", list(item_ids)).execute()
 
 
 def undo_return(item_ids):
-    with db() as conn:
-        conn.executemany(
-            "UPDATE items SET is_returned = 0, claimed_by = NULL, returned_at = NULL WHERE id = ?",
-            [(i,) for i in item_ids],
-        )
+    sb().table("items").update(
+        {"is_returned": False, "claimed_by": None, "returned_at": None}
+    ).in_("id", list(item_ids)).execute()
+
+
+@st.cache_data(show_spinner=False, max_entries=1000)
+def photo_bytes(path):
+    """Download a photo from Supabase Storage once, then keep it in memory."""
+    return sb().storage.from_(PHOTO_BUCKET).download(path)
 
 
 # =========================================================
@@ -351,18 +303,6 @@ def get_embedder():
         quantize=False,
     )
     return vision.ImageEmbedder.create_from_options(options)
-
-
-def photo_vector(image_bytes):
-    """Whole-photo vector saved with each item (kept for older-data compatibility)."""
-    try:
-        img = ImageOps.exif_transpose(Image.open(io.BytesIO(image_bytes))).convert("RGB")
-        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=np.array(img))
-        result = get_embedder().embed(mp_image)
-        return np.array(result.embeddings[0].embedding, dtype=np.float32)
-    except Exception as e:
-        st.error(f"That photo couldn't be read. Try a JPG or PNG. ({e})")
-        return None
 
 
 def _embed(img):
@@ -394,23 +334,20 @@ def query_vectors(image_bytes):
         return None
 
 
-@st.cache_data(show_spinner=False)
-def stored_vectors(image_path, mtime):
+@st.cache_data(show_spinner=False, max_entries=1000)
+def stored_vectors(image_path):
     """Same multi-crop vectors for a saved item photo (cached, so it runs once per item)."""
-    return image_vectors(Image.open(image_path))
+    return image_vectors(Image.open(io.BytesIO(photo_bytes(image_path))))
 
 
 def item_vectors(item):
     path = item.get("image_path")
-    if path and os.path.exists(path):
-        try:
-            return stored_vectors(path, os.path.getmtime(path))
-        except Exception:
-            pass
-    vp = item.get("vector_path")  # fallback: older items with only a saved vector
-    if vp and os.path.exists(vp):
-        return [np.load(vp)]
-    return []
+    if not path:
+        return []
+    try:
+        return stored_vectors(path)
+    except Exception:
+        return []
 
 
 def best_score(qvecs, ivecs):
@@ -425,10 +362,10 @@ def cosine(a, b):
 # =========================================================
 # 5. DISPLAY HELPERS
 # =========================================================
-@st.cache_data(show_spinner=False)
-def thumb_data_uri(path, mtime, size=480):
-    """Square-ish cropped thumbnail as a data URI (cached; mtime busts the cache)."""
-    img = ImageOps.exif_transpose(Image.open(path)).convert("RGB")
+@st.cache_data(show_spinner=False, max_entries=2000)
+def thumb_data_uri(path, size=480):
+    """Cropped thumbnail of a stored photo as a data URI (cached)."""
+    img = ImageOps.exif_transpose(Image.open(io.BytesIO(photo_bytes(path)))).convert("RGB")
     img = ImageOps.fit(img, (size, int(size * 0.75)))
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=82)
@@ -436,12 +373,12 @@ def thumb_data_uri(path, mtime, size=480):
 
 
 def thumb(path, size=480):
-    if path and os.path.exists(path):
-        try:
-            return thumb_data_uri(path, os.path.getmtime(path), size)
-        except Exception:
-            return None
-    return None
+    if not path:
+        return None
+    try:
+        return thumb_data_uri(path, size)
+    except Exception:
+        return None
 
 
 def nice_date(value):
@@ -913,45 +850,47 @@ def step_head(n, text):
 
 
 def save_item(photo, item_type, where, found_on, notes, keep, pickup_room):
-    raw = photo.getvalue()
-    vector = photo_vector(raw)
-    ext = os.path.splitext(getattr(photo, "name", "") or "")[1].lower() or ".jpg"
+    # Make sure the photo opens, then shrink it so storage stays small
+    try:
+        img = ImageOps.exif_transpose(Image.open(io.BytesIO(photo.getvalue()))).convert("RGB")
+    except Exception:
+        st.error("That photo couldn't be read. Try a JPG or PNG.")
+        return
+    img.thumbnail((1600, 1600))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=85)
 
     status = "approved" if st.session_state.get("is_staff") else "pending"
-    conn = db()
+    holding = "Front Office" if keep == "Front Office" else "Classroom"
     try:
-        c = conn.cursor()
-        c.execute("BEGIN IMMEDIATE")  # locks the DB so two people can't take the same slot
-        if keep == "Front Office":
-            slot, holding, room = lowest_free_slot(c), "Front Office", None
-        else:
-            slot, holding, room = None, "Classroom", pickup_room
-        c.execute(
-            "INSERT INTO items (slot_number, holding_location, item_type, location_found, "
-            "date_found, notes, image_path, pickup_room, status) VALUES (?, ?, ?, ?, ?, ?, '', ?, ?)",
-            (slot, holding, item_type, where, found_on.strftime("%Y-%m-%d"), notes, room, status),
-        )
-        new_id = c.lastrowid
-        img_path = os.path.join(UPLOAD_DIR, f"item_{new_id}{ext}")
-        with open(img_path, "wb") as f:
-            f.write(raw)
-        vec_path = None
-        if vector is not None:
-            vec_path = os.path.join(VECTOR_DIR, f"vector_{new_id}.npy")
-            np.save(vec_path, vector)
-        c.execute(
-            "UPDATE items SET image_path = ?, vector_path = ? WHERE id = ?",
-            (img_path, vec_path, new_id),
-        )
-        conn.commit()
+        # add_item runs inside the database and locks it while it picks the lowest
+        # free slot, so two people can never get the same slot number.
+        row = sb().rpc("add_item", {
+            "p_holding": holding,
+            "p_item_type": item_type,
+            "p_location": where,
+            "p_date": found_on.isoformat(),
+            "p_notes": notes,
+            "p_pickup_room": pickup_room if holding == "Classroom" else None,
+            "p_status": status,
+        }).execute().data
+        row = row[0] if isinstance(row, list) else row
+        path = f"item_{row['id']}.jpg"
+        try:
+            sb().storage.from_(PHOTO_BUCKET).upload(
+                path, buf.getvalue(), {"content-type": "image/jpeg", "upsert": "true"}
+            )
+        except Exception:
+            sb().table("items").delete().eq("id", row["id"]).execute()  # don't keep an item with no photo
+            raise
+        sb().table("items").update({"image_path": path}).eq("id", row["id"]).execute()
     except Exception as e:
-        conn.rollback()
         st.error(f"The item wasn't saved. Try again. ({e})")
         return
-    finally:
-        conn.close()
 
-    st.session_state.last_registered = {"slot": slot, "room": pickup_room, "pending": status == "pending"}
+    st.session_state.last_registered = {
+        "slot": row.get("slot_number"), "room": pickup_room, "pending": status == "pending"
+    }
     st.rerun()
 
 
