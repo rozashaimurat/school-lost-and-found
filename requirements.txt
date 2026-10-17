@@ -3,3 +3,4 @@ mediapipe==0.10.14
 opencv-python-headless
 pillow
 numpy<2.0.0
+supabase>=2.10,<3
