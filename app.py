@@ -1079,9 +1079,10 @@ def staff_page():
                 column_config={"Photo": st.column_config.ImageColumn("Photo", width="small")},
                 on_select="rerun",
                 selection_mode="multi-row",
-                key="active_table",
+                # New key whenever the list changes, so old row selections are cleared
+                key="active_table_" + "_".join(str(i) for i in df["id"]),
             )
-            picked = [int(df.iloc[i]["id"]) for i in event.selection.rows]
+            picked = [int(df.iloc[i]["id"]) for i in event.selection.rows if i < len(df)]
             if picked:
                 n = len(picked)
                 if st.button(
